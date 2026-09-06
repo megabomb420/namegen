@@ -4,6 +4,8 @@ import { activeBrief, findSaved } from '../state/helpers';
 import type { AppState, DisplayBatch } from '../state/types';
 import { NameRow } from './NameRow';
 import { MODE_OPTIONS, LENGTH_OPTIONS, MODE_LABELS } from './labels';
+import { pickRandomBrief } from './randomBriefs';
+import { ShuffleIcon } from './icons';
 
 interface CreateViewProps {
   state: AppState;
@@ -40,8 +42,19 @@ export function CreateView({ state, store }: CreateViewProps) {
       <div className="field">
         <div className="field-head">
           <label htmlFor="brief">Brief</label>
-          <span className={`count${briefOver ? ' count-over' : ''}`} aria-live="polite">
-            {briefLength}/2000
+          <span className="field-tools">
+            <span className={`count${briefOver ? ' count-over' : ''}`} aria-live="polite">
+              {briefLength}/2000
+            </span>
+            <button
+              type="button"
+              className="dice"
+              aria-label="Random idea for the brief"
+              title="Fill the brief with a random idea"
+              onClick={() => store.setBrief(pickRandomBrief(brief === '' ? null : brief))}
+            >
+              <ShuffleIcon size={16} />
+            </button>
           </span>
         </div>
         <textarea

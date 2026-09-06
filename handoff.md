@@ -71,6 +71,11 @@ Local secrets go in `.dev.vars` (template: `.dev.vars.example`, gitignored). Clo
 - Comparison keys use NFKD + Unicode case folding (incl. ß→ss, final sigma→sigma) while displayed values keep their original spelling and diacritics (shared by server filtering, shortlist dedupe, and avoid-list management).
 - The privacy disclosure is scoped to the Namegen service (which stores nothing) and explicitly disclaims control over DeepSeek retention.
 - Generated icons come from a dependency-free script so the repo carries no image assets generator; PNGs are committed and self-checked on write.
+- Create keeps a **separate remembered brief draft per mode** (Track/Release/Artist), memory-only
+  per spec §7 (cleared by Clear working session, empty after reload). A **dice button** fills the
+  active brief with a random curated idea (`src/ui/randomBriefs.ts`, no warning-sign vocabulary).
+  Offline/online copy clarified: saved names and restored results open offline; generating names
+  always needs the internet (DeepSeek).
 
 ## Checks performed
 

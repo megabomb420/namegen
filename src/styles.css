@@ -148,6 +148,34 @@ textarea {
   font-weight: 700;
 }
 
+.field-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dice {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--dim);
+}
+
+.dice:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.dice:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 textarea,
 input[type='text'] {
   width: 100%;
