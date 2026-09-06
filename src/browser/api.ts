@@ -11,6 +11,14 @@ export type WireOutcome =
   | { ok: true; names: string[]; partial: boolean }
   | { ok: false; code: string; message: string; retryable: boolean };
 
+/**
+ * Base for API calls. Empty string = same origin (the Cloudflare Worker that
+ * also serves this build). A Pages/static-host build sets VITE_API_BASE to the
+ * Worker URL at build time; nothing else differs.
+ */
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '');
+const API_ENDPOINT = `${API_BASE}/api/generate`;
+
 function serverFailure(status: number, raw: unknown): WireOutcome {
   const fallbackMessage =
     status === 429
@@ -37,7 +45,7 @@ export async function submitNaming(
 ): Promise<WireOutcome> {
   let response: Response;
   try {
-    response = await fetchImpl('/api/generate', {
+    response = await fetchImpl(API_ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(request),

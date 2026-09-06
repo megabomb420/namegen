@@ -13,11 +13,13 @@ function makeEnv(options: {
   apiKey?: string;
   disabled?: boolean;
   noLimiter?: boolean;
+  corsOrigins?: string;
 } = {}): Harness {
   const limitSpy = vi.fn(options.limitImpl ?? (async () => ({ success: true })));
   const workerEnv: WorkerEnv = {
     DEEPSEEK_API_KEY: options.apiKey === undefined ? 'test-key' : options.apiKey,
     GENERATION_DISABLED: options.disabled === true ? 'true' : undefined,
+    CORS_ORIGINS: options.corsOrigins,
     ...(options.noLimiter === true ? {} : ({ RATE_LIMITER: { limit: limitSpy } } as Partial<WorkerEnv>)),
   };
   return { workerEnv, limitSpy };
@@ -268,3 +270,47 @@ describe('result mapping', () => {
 // Keep the RateLimiter type import referenced for interface drift checks.
 const _typeCheck: RateLimiter = { limit: async () => ({ success: true }) };
 void _typeCheck;
+
+describe('cross-origin (GitHub Pages mirror)', () => {
+  const PAGES_ORIGIN = 'https://megabomb420.github.io';
+
+  it('answers preflight for an allowed origin without contacting the provider', async () => {
+    const { workerEnv, limitSpy } = makeEnv({ corsOrigins: PAGES_ORIGIN });
+    const request = new Request('https://namegen.example/api/generate', {
+      method: 'OPTIONS',
+      headers: { origin: PAGES_ORIGIN, 'access-control-request-method': 'POST' },
+    });
+    const response = await handleRequest(request, workerEnv);
+    expect(response.status).toBe(204);
+    expect(response.headers.get('access-control-allow-origin')).toBe(PAGES_ORIGIN);
+    expect(response.headers.get('access-control-allow-methods')).toBe('POST');
+    expect(response.headers.get('access-control-allow-headers')).toBe('content-type');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(limitSpy).not.toHaveBeenCalled();
+  });
+
+  it('attaches CORS headers to normal responses for an allowed origin', async () => {
+    const { workerEnv } = makeEnv({ corsOrigins: PAGES_ORIGIN });
+    const request = apiRequest(validBody, { origin: PAGES_ORIGIN });
+    const response = await handleRequest(request, workerEnv);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBe(PAGES_ORIGIN);
+  });
+
+  it('never grants CORS to a disallowed origin', async () => {
+    const { workerEnv } = makeEnv({ corsOrigins: PAGES_ORIGIN });
+    const response = await handleRequest(apiRequest(validBody, { origin: 'https://evil.example' }), workerEnv);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('sends no CORS headers without an Origin header, and OPTIONS stays 405', async () => {
+    const { workerEnv } = makeEnv({ corsOrigins: PAGES_ORIGIN });
+    const response = await handleRequest(apiRequest(validBody), workerEnv);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    const options = await handleRequest(new Request('https://namegen.example/api/generate', { method: 'OPTIONS' }), workerEnv);
+    expect(options.status).toBe(405);
+    expect(options.headers.get('access-control-allow-origin')).toBeNull();
+  });
+});

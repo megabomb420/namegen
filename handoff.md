@@ -4,6 +4,16 @@ Updated: 2026-09-06 (implementation complete; review findings fixed; **live Deep
 
 ## Current state
 
+**Repo is public** (https://github.com/megabomb420/namegen) since 2026-09-06; secret audit of full
+history was clean before flipping visibility. A **GitHub Pages mirror** of the PWA is being added:
+Pages serves only the static shell (built with `--mode pages`, base `/namegen/`, API base baked to
+the Worker), while the naming API and the DeepSeek key stay on the Cloudflare Worker. The Worker
+serves a narrow CORS allow-list (`CORS_ORIGINS` var = Pages origin) plus OPTIONS preflight for
+that origin; no wildcard CORS. This is a deliberate product decision to mirror the frontend on a
+second static host; the naming service remains single-origin-server.
+
+## Current state
+
 Standalone v0.1 PWA implemented and committed on `main`: React + TypeScript + Vite frontend, one Cloudflare Worker with Static Assets (`POST /api/generate`), ordinary server-side naming modules, versioned local/session storage, deterministic tests. No ChatGPT/MCP scaffolding. No accounts, no cloud sync, no history browser.
 
 The ten material findings of the external review of `90b7619` are fixed, regression-tested, and recorded in `findings.md` (each with status). This pass changed generation behaviour (explicit `thinking: disabled`; `finish_reason` must be exactly `stop`), so a live creative-fixture rerun is required once a DeepSeek key is available.

@@ -19,5 +19,8 @@
       "simple": { "limit": 10, "period": 60 }
     }
   ],
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  "vars": {
+    "CORS_ORIGINS": "https://megabomb420.github.io"
+  }
 }

@@ -27,6 +27,13 @@ export interface WorkerEnv {
   GENERATION_DISABLED?: string;
   /** Cloudflare rate-limit binding (10 requests / 60s per client IP). */
   RATE_LIMITER?: RateLimiter;
+  /**
+   * Comma-separated list of browser origins allowed to call this API
+   * cross-origin (e.g. the GitHub Pages mirror of the PWA). Narrow by design:
+   * only these exact origins receive CORS headers; no wildcard is ever used.
+   * Omit for a same-origin-only deployment.
+   */
+  CORS_ORIGINS?: string;
 }
 
 type LogFn = (line: string) => void;
@@ -228,33 +235,86 @@ async function handleGenerate(request: Request, env: WorkerEnv, log: LogFn): Pro
   return json({ names: result.names, partial: result.partial }, 200);
 }
 
+async function route(request: Request, env: WorkerEnv, log: LogFn): Promise<Response> {
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  if (path !== '/api/generate') {
+    // Every unknown /api path is a JSON 404; API paths never return HTML.
+    if (path.startsWith('/api/')) {
+      return errorResponse('NOT_FOUND', 'Not found.', false, 404);
+    }
+    // Defensive: with run_worker_first only /api/* reaches this Worker.
+    return errorResponse('NOT_FOUND', 'Not found.', false, 404);
+  }
+
+  if (request.method !== 'POST') {
+    const response = errorResponse('METHOD_NOT_ALLOWED', 'Method not allowed.', false, 405);
+    response.headers.set('allow', 'POST');
+    return response;
+  }
+
+  return await handleGenerate(request, env, log);
+}
+
+// ----- Cross-origin support for the GitHub Pages mirror --------------------
+// Narrow by design: only origins listed in CORS_ORIGINS (plus the Worker's own
+// origin) receive CORS headers. No wildcard is ever used.
+
+function normalizeOrigin(origin: string): string {
+  return origin.trim().replace(/\/+$/, '');
+}
+
+function corsOriginFor(request: Request, env: WorkerEnv): string | null {
+  const raw = request.headers.get('origin');
+  if (raw === null || raw === '') return null;
+  const origin = normalizeOrigin(raw);
+  if (origin === new URL(request.url).origin) return origin;
+  const configured = (env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map(normalizeOrigin)
+    .filter((o) => o !== '');
+  return configured.includes(origin) ? origin : null;
+}
+
+function applyCors(request: Request, env: WorkerEnv, response: Response): Response {
+  const origin = corsOriginFor(request, env);
+  if (origin !== null) {
+    response.headers.set('access-control-allow-origin', origin);
+    response.headers.set('vary', 'Origin');
+  }
+  return response;
+}
+
+function preflightResponse(origin: string): Response {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'access-control-allow-origin': origin,
+      'vary': 'Origin',
+      'access-control-allow-methods': 'POST',
+      'access-control-allow-headers': 'content-type',
+      'access-control-max-age': '86400',
+      'cache-control': NO_STORE,
+    },
+  });
+}
+
 export async function handleRequest(request: Request, env: WorkerEnv, log: LogFn = (line) => console.log(line)): Promise<Response> {
   try {
     const url = new URL(request.url);
-    const path = url.pathname;
-
-    if (path !== '/api/generate') {
-      // Every unknown /api path is a JSON 404; API paths never return HTML.
-      if (path.startsWith('/api/')) {
-        return errorResponse('NOT_FOUND', 'Not found.', false, 404);
-      }
-      // Defensive: with run_worker_first only /api/* reaches this Worker.
-      return errorResponse('NOT_FOUND', 'Not found.', false, 404);
+    // CORS preflight for the API before any routing decision.
+    if (request.method === 'OPTIONS' && url.pathname === '/api/generate') {
+      const origin = corsOriginFor(request, env);
+      if (origin !== null) return preflightResponse(origin);
     }
-
-    if (request.method !== 'POST') {
-      const response = errorResponse('METHOD_NOT_ALLOWED', 'Method not allowed.', false, 405);
-      response.headers.set('allow', 'POST');
-      return response;
-    }
-
-    return await handleGenerate(request, env, log);
+    return applyCors(request, env, await route(request, env, log));
   } catch (error) {
     const name = error instanceof Error ? error.name : 'unknown';
     const message = error instanceof Error ? error.message : 'unknown';
     // No stack traces, no bodies, no request content in logs.
     console.log(JSON.stringify({ event: 'http-failure', name, message }));
-    return errorResponse('SERVICE_UNAVAILABLE', 'Something went wrong. Try again.', true, 500);
+    return applyCors(request, env, errorResponse('SERVICE_UNAVAILABLE', 'Something went wrong. Try again.', true, 500));
   }
 }
 
