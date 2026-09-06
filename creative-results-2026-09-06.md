@@ -119,3 +119,20 @@ unchanged — concrete briefs still produce grounded names (e.g. Chain Lullaby,
 Stairwell Music Box, Vending Machine Hymnal, Two AM Concrete Strings), max
 completion tokens 65. The strict gate working as intended (fail loudly, manual
 rerun documented) rather than an indicator of quality regression.
+
+## Warning-word pass (same day, product-owner word list)
+
+[RUNTIME] (spec §13) now lists static, cold, night, pulse, protocol, frequency, veil, concrete,
+ghost, signal, and tapes as strong warning signs (use only when the brief genuinely calls for the
+idea, never repeat a root across a batch), calls out the formulaic '[something] Static' title
+construction, and sharpens counts to "exactly 8 / exactly 6, never more".
+
+Measured across a full 24-run pass after the change: 130 names → 129 names, 'static' fell 12 → 9,
+cold/night/pulse/protocol/frequency/veil/signal/tapes ≈ 0, and the remaining static/concrete/
+ghost uses are mostly brief-grounded (radio/static coastal briefs, concrete stairwell brief,
+haunted-fairground brief). The cliché-trap fixture still returns neon/midnight vocabulary by
+design (the brief explicitly requests it). One fixture run again hit the recurring provider
+anomaly — the model returned 8 names for a refine (requested 6), which validation rejects
+wholesale per spec; it passed on isolated rerun (documented manual procedure). Root cause of the
+'selection-shape' failures seen across the day is confirmed: over-length arrays from the model,
+not validation bugs.

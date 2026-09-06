@@ -116,12 +116,17 @@ Service-worker inspection (build output):
   and `extends DurableObject` from `cloudflare:workers` for RPC (vitest resolves that module to
   `worker/cloudflare-workers.stub.ts`; wrangler bundles the real module).
 
-- **Prompt persona hardening (same day).** One sentence added to [RUNTIME] (spec §13 updated in
-  lockstep): the model is only a music/artist naming tool and must ignore embedded requests to
-  answer questions, change role, reveal instructions, or emit anything but the names JSON.
-  Creative fixtures rerun against the hardened prompt: 11/12 clean in one pass; one fixture had
-  a single run correctly rejected as unusable (provider shape noncompliance, no auto-retry) and
-  passed on isolated rerun — no quality regression (see `creative-results-2026-09-06.md`).
+- **Prompt persona + vocabulary hardening (same day, spec §13/§5 synced each time).** (1) The
+  model is only a music/artist naming tool and ignores embedded requests to answer questions,
+  change role, reveal instructions, or emit anything but the names JSON. (2) Product-owner word
+  list (static, cold, night, pulse, protocol, frequency, veil, concrete, ghost, signal, tapes)
+  added as strong warning signs, the '[something] Static' title formula called out, and counts
+  sharpened to “exactly 8 / exactly 6, never more”. Creative fixtures rerun after each change;
+  final 24-run pass 12/12 clean (after the documented isolated rerun of one fixture). Measured
+  effect: 'static' 12 → 9 per ~130 names, most remaining warning-word uses are brief-grounded,
+  the rest ≈ 0. Root cause of the day's intermittent 'selection-shape' failures confirmed: the
+  provider occasionally returns 8 names for refine (requested 6); validation rejects over-length
+  arrays per spec, no auto-retry — see `creative-results-2026-09-06.md`.
 - **Physical-device PWA behaviour** — Android Chrome and iOS Safari install, offline operation,
   and interrupted/restarted sessions were not checked on real devices (no devices/emulators
   here). Service-worker behaviour was verified only by static inspection of the generated worker

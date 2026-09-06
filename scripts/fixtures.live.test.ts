@@ -65,6 +65,7 @@ runLive('creative fixtures (live DeepSeek, twice each)', () => {
     );
     const truncatedCount = usageEvents.filter((e) => e.outcome === 'provider-truncated').length;
     const unusable = rows.filter((r) => r.names === null).length;
+    const outcomes = usageEvents.map((e) => e.outcome).join(',');
 
     // Print evidence first so a failing run still shows exactly what the
     // provider returned before the assertions below throw.
@@ -72,7 +73,7 @@ runLive('creative fixtures (live DeepSeek, twice each)', () => {
     const body = [
       `  run 1: ${run1.names === null ? `ERROR ${run1.error}` : run1.names.join(' | ')}`,
       `  run 2: ${run2.names === null ? `ERROR ${run2.error}` : run2.names.join(' | ')}`,
-      `  exact duplicates across runs: ${overlap.length} | max completion tokens: ${maxCompletionTokens} | unusable runs: ${unusable}`,
+      `  exact duplicates across runs: ${overlap.length} | max completion tokens: ${maxCompletionTokens} | unusable runs: ${unusable} | outcomes: ${outcomes}`,
     ].join('\n');
     // eslint-disable-next-line no-console
     console.log(header + '\n' + body);
