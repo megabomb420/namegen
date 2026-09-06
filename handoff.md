@@ -85,11 +85,14 @@ Service-worker inspection (build output):
   first batches, refinement relationship/instruction quality, repeated-root inspection) is a
   human review of the recorded names that is still open. Rerun `npm run fixtures` after any
   future prompt or generation-setting change.
-- **Cloudflare deployment / kill switch / spending safeguard** — no Cloudflare credentials in
-  this environment. Deploy is being done manually by the maintainer; the kill switch and limiter
-  are code-verified but not yet deployed. The provider-enforced spending safeguard (or bounded
-  prepaid funding without auto top-ups) must be configured in the DeepSeek billing panel before
-  public launch; development calls consume the same DeepSeek funds.
+- **Cloudflare deployment** — **DONE 2026-09-06**: Worker + static assets live at
+  https://namegen.whip-blanket.workers.dev (wrangler OAuth, account “Whip Blanket”). Verified on
+  the deployed URL: SPA 200, `/api/*` JSON 404/405/415/400 behaviour, and the production kill
+  switch returning 503 before any provider contact. Deployed **with `GENERATION_DISABLED=true`**
+  (kill switch ON) as a staged rollout — no DeepSeek spend can occur until the switch is removed.
+  To go live: (1) configure the provider-enforced spending safeguard / bounded prepaid funding in
+  the DeepSeek billing panel, then (2) `wrangler secret delete GENERATION_DISABLED`. The
+  rate-limit binding (`RATE_LIMITER`, 10 req/60 s per IP) deployed cleanly with namespace `1001`.
 - **Physical-device PWA behaviour** — Android Chrome and iOS Safari install, offline operation,
   and interrupted/restarted sessions were not checked on real devices (no devices/emulators
   here). Service-worker behaviour was verified only by static inspection of the generated worker
