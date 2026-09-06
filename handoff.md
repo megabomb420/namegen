@@ -75,7 +75,7 @@ Local secrets go in `.dev.vars` (template: `.dev.vars.example`, gitignored). Clo
 ## Checks performed
 
 Automated (all deterministic, mocked, in CI form — `npm test`):
-- 105 passing tests + clean `tsc --noEmit` + production build. Coverage includes: surplus selection & discard; partial batches; zero-valid output; overlength (code-point) and control-character entries; Unicode duplicates incl. full case folding; malformed/truncated provider content and missing/null/non-`stop` finish reasons rejected, never reconstructed; extra-key/overlong-array rejection; avoid+seed exclusion; provider 429/5xx/network/timeout mapping; 24KB body cap (streamed); routing 404/405; content-type 415; kill switch; missing key and missing/broken limiter fail closed; limiter deny → 429 + Retry-After; stale-response and cleared-work races; single active request enforced at the transport layer (concurrent attempts refused until settlement); retry-snapshot identity; refinement batches entering the bounded recovery list and persisting without raw context; saved-name local exploration; session-clear failure surfacing; storage corruption/blocking/full; shortlist 300-cap without eviction; the main journey (Generate → Explore → Save → Reload → Copy); network-failure UI; Explore text editing keeping keyboard focus.
+- 117 passing tests + clean `tsc --noEmit` + production build. Coverage includes: surplus selection & discard; partial batches; zero-valid output; overlength (code-point) and control-character entries; Unicode duplicates incl. full case folding; malformed/truncated provider content and missing/null/non-`stop` finish reasons rejected, never reconstructed; extra-key/overlong-array rejection; avoid+seed exclusion; provider 429/5xx/network/timeout mapping; 24KB body cap (streamed); routing 404/405; content-type 415; kill switch; missing key and missing/broken limiter fail closed; Cloudflare and Durable-Object limiter denies → 429 + Retry-After (exact 3/min window unit-tested); stale-response and cleared-work races; single active request enforced at the transport layer (concurrent attempts refused until settlement); retry-snapshot identity; refinement batches entering the bounded recovery list and persisting without raw context; saved-name local exploration; session-clear failure surfacing; storage corruption/blocking/full; shortlist 300-cap without eviction; the main journey (Generate → Explore → Save → Reload → Copy); network-failure UI; Explore text editing keeping keyboard focus.
 
 Live provider (real DeepSeek key, 2026-09-06, via `npm run fixtures`):
 - Full pass 12/12 fixtures × 2 runs, zero unusable runs, zero truncation. Highest completion tokens 67 (Japanese; Arabic 61; English ≤ 59) — well under the 800 ceiling, so multilingual headroom is empirically confirmed for the JP/AR fixtures. Names, per-run lists, duplicate counts and quality observations are recorded in `creative-results-2026-09-06.md`; provisional read of the ≥75% plausible-candidate gate is met for every non-cliché batch, pending the human reviewer. One transient upstream anomaly (r-artist-spanish failing under sustained load, passing in isolation and in the recorded run) is documented there; the fixtures runner prints evidence before its assertions and fails loudly, and manual single-fixture rerun is the procedure. Live smoke of a blank generate via the full HTTP-less service path also succeeded.
@@ -101,9 +101,27 @@ Service-worker inspection (build output):
   503 (staged rollout), then **generation enabled** (kill-switch secret deleted after the
   maintainer confirmed DeepSeek spending limits are set) and verified live: two `POST
   /api/generate` calls returned 200 with 6 valid names each and `cache-control: no-store`
-  (blank-brief and coastal-release examples). Rate-limit binding (`RATE_LIMITER`, 10 req/60 s
-  per IP) deployed cleanly with namespace `1001`. Kill switch can be re-armed at any time via
+  (blank-brief and coastal-release examples). Kill switch can be re-armed at any time via
   `wrangler secret put GENERATION_DISABLED` (value `true`).
+
+- **Hard request cap — Durable Object (authorized scope change, recorded in spec §9).** Live
+  testing showed the Cloudflare rate-limit *binding* (`RATE_LIMITER`) is **not enforced on the
+  account's free plan** (~36 rapid and paced requests, zero 429), so a single `NamingRateLimiter`
+  Durable Object now enforces the cap in application code: **3 requests/minute per client IP**,
+  exact; fail-closed (503 when the binding is missing or the check throws); 429 + `Retry-After`
+  on denial. Verified live 2026-09-06: requests 1–3 → 200, request 4 → 429 (`Retry-After: 57`).
+  Tunable via the `NAMING_LIMIT_PER_MINUTE` var (default `3`). The CF binding stays as an extra
+  edge layer (3/60, namespace `1001`) and starts enforcing if the account is upgraded. Window
+  logic is pure and unit-tested (`worker/window.ts`); the DO class is in `worker/rateLimit.ts`
+  and `extends DurableObject` from `cloudflare:workers` for RPC (vitest resolves that module to
+  `worker/cloudflare-workers.stub.ts`; wrangler bundles the real module).
+
+- **Prompt persona hardening (same day).** One sentence added to [RUNTIME] (spec §13 updated in
+  lockstep): the model is only a music/artist naming tool and must ignore embedded requests to
+  answer questions, change role, reveal instructions, or emit anything but the names JSON.
+  Creative fixtures rerun against the hardened prompt: 11/12 clean in one pass; one fixture had
+  a single run correctly rejected as unusable (provider shape noncompliance, no auto-retry) and
+  passed on isolated rerun — no quality regression (see `creative-results-2026-09-06.md`).
 - **Physical-device PWA behaviour** — Android Chrome and iOS Safari install, offline operation,
   and interrupted/restarted sessions were not checked on real devices (no devices/emulators
   here). Service-worker behaviour was verified only by static inspection of the generated worker

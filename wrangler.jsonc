@@ -13,14 +13,31 @@
     {
       "name": "RATE_LIMITER",
       // Integer-string namespace id, unique per Cloudflare account. "1001" is the
-      // documentation default and is simulated locally by `wrangler dev`; pick your
-      // own integer if you deploy several rate-limited Workers under one account.
+      // documentation default and is simulated locally by `wrangler dev`.
       "namespace_id": "1001",
-      "simple": { "limit": 10, "period": 60 }
+      // Cloudflare-edge per-IP ceiling before any DeepSeek call. Per-location and
+      // approximate; may be unenforced on free plans — the authoritative cap is
+      // the NAMING_LIMITER Durable Object below (same 3/min, exact, in code).
+      "simple": { "limit": 3, "period": 60 }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NAMING_LIMITER",
+        "class_name": "NamingRateLimiter"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["NamingRateLimiter"]
     }
   ],
   "observability": { "enabled": true },
   "vars": {
-    "CORS_ORIGINS": "https://megabomb420.github.io"
+    "CORS_ORIGINS": "https://megabomb420.github.io",
+    "NAMING_LIMIT_PER_MINUTE": "3"
   }
 }

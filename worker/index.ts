@@ -16,8 +16,21 @@ import type { ApiErrorCode, NamingFailure, NamingResult } from '../shared/contra
 import { normalizeRequest } from '../server/validation';
 import { runValidatedNamingRequest, type ServiceReport } from '../server/service';
 
+// Re-exported so the bundler exposes the Durable Object class named in
+// wrangler.jsonc (migrations reference "NamingRateLimiter").
+export { NamingRateLimiter } from './rateLimit';
+
 export interface RateLimiter {
   limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
+export interface NamingLimiterStub {
+  check(input: { key: string; limit: number; windowSec: number }): Promise<{ allowed: boolean; retryAfterSec: number }>;
+}
+
+export interface NamingLimiterNamespace {
+  idFromName(name: string): unknown;
+  get(id: unknown): NamingLimiterStub;
 }
 
 export interface WorkerEnv {
@@ -34,6 +47,10 @@ export interface WorkerEnv {
    * Omit for a same-origin-only deployment.
    */
   CORS_ORIGINS?: string;
+  /** Durable Object enforcing the hard per-IP minute cap (see rateLimit.ts). */
+  NAMING_LIMITER?: NamingLimiterNamespace;
+  /** Max requests per client IP per minute enforced by the Durable Object. */
+  NAMING_LIMIT_PER_MINUTE?: string;
 }
 
 type LogFn = (line: string) => void;
@@ -203,6 +220,38 @@ async function handleGenerate(request: Request, env: WorkerEnv, log: LogFn): Pro
       429,
     );
     response.headers.set('retry-after', RETRY_AFTER);
+    return response;
+  }
+
+  // 7b. Hard per-IP minute cap via the Durable Object. The Cloudflare rate-limit
+  //     binding above is approximate and per-location (and may be unenforced on
+  //     some plans); the Durable Object gives an exact application-level cap.
+  //     Fail closed when the binding is unavailable.
+  const durableLimiter = env.NAMING_LIMITER;
+  if (durableLimiter === undefined) {
+    log('generate rejected: durable rate limiter binding unavailable');
+    return errorResponse('SERVICE_UNAVAILABLE', 'Request limiting is not configured. Try again later.', false, 503);
+  }
+  const parsedLimit = Number.parseInt(env.NAMING_LIMIT_PER_MINUTE ?? '3', 10);
+  const perMinuteLimit = Number.isFinite(parsedLimit) ? Math.min(60, Math.max(1, parsedLimit)) : 3;
+  let durableDecision: { allowed: boolean; retryAfterSec: number };
+  try {
+    const stub = durableLimiter.get(durableLimiter.idFromName('naming'));
+    durableDecision = await stub.check({ key, limit: perMinuteLimit, windowSec: 60 });
+  } catch (error) {
+    log(`durable rate limiter error: ${error instanceof Error ? error.name : 'unknown'}`);
+    return errorResponse('SERVICE_UNAVAILABLE', 'Request limiting is unavailable. Try again later.', false, 503);
+  }
+  if (!durableDecision.allowed) {
+    log('generate rejected: durable rate limited');
+    const retryAfter = String(Math.max(1, durableDecision.retryAfterSec));
+    const response = errorResponse(
+      'RATE_LIMITED',
+      'Too many requests from this network. Wait a moment, then try again.',
+      true,
+      429,
+    );
+    response.headers.set('retry-after', retryAfter);
     return response;
   }
 

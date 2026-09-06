@@ -108,3 +108,14 @@ is the documented procedure. No runtime code path retries automatically.
 - Human confirmation of the ≥75% plausible-candidate gate and refinement-quality judgement
   against the names above.
 - Rerun after any future prompt or generation-setting change.
+
+## Post-hardening rerun (same day, after the §13 persona/anti-injection sentence)
+
+Full `npm run fixtures` against the hardened prompt: 11/12 passed; one fixture
+(`g-track-detailed`) had a single run rejected as unusable because the provider
+returned a shape that did not validate (selection rejected it by design; no
+auto-retry). An isolated rerun of that fixture passed 2/2. Recorded quality is
+unchanged — concrete briefs still produce grounded names (e.g. Chain Lullaby,
+Stairwell Music Box, Vending Machine Hymnal, Two AM Concrete Strings), max
+completion tokens 65. The strict gate working as intended (fail loudly, manual
+rerun documented) rather than an indicator of quality regression.

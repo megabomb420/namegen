@@ -1,11 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { handleRequest, type RateLimiter, type WorkerEnv } from './index';
+import { handleRequest, type NamingLimiterNamespace, type RateLimiter, type WorkerEnv } from './index';
 
 const validBody = { operation: 'generate', mode: 'track', brief: 'deep sub bass' };
 
 interface Harness {
   workerEnv: WorkerEnv;
   limitSpy: Mock<(opts: { key: string }) => Promise<{ success: boolean }>>;
+  durableSpy: Mock<(input: { key: string; limit: number; windowSec: number }) => Promise<{ allowed: boolean; retryAfterSec: number }>>;
+}
+
+function makeDurableLimiter(
+  spy: Harness['durableSpy'],
+): NamingLimiterNamespace {
+  return {
+    idFromName: () => 'id',
+    get: () => ({ check: spy }) as never,
+  };
 }
 
 function makeEnv(options: {
@@ -14,15 +24,22 @@ function makeEnv(options: {
   disabled?: boolean;
   noLimiter?: boolean;
   corsOrigins?: string;
+  noDurableLimiter?: boolean;
+  durableImpl?: (input: { key: string; limit: number; windowSec: number }) => Promise<{ allowed: boolean; retryAfterSec: number }>;
 } = {}): Harness {
   const limitSpy = vi.fn(options.limitImpl ?? (async () => ({ success: true })));
+  const durableSpy = vi.fn(
+    options.durableImpl ?? (async () => ({ allowed: true, retryAfterSec: 0 })),
+  );
   const workerEnv: WorkerEnv = {
     DEEPSEEK_API_KEY: options.apiKey === undefined ? 'test-key' : options.apiKey,
     GENERATION_DISABLED: options.disabled === true ? 'true' : undefined,
     CORS_ORIGINS: options.corsOrigins,
+    NAMING_LIMIT_PER_MINUTE: '3',
     ...(options.noLimiter === true ? {} : ({ RATE_LIMITER: { limit: limitSpy } } as Partial<WorkerEnv>)),
+    ...(options.noDurableLimiter === true ? {} : { NAMING_LIMITER: makeDurableLimiter(durableSpy) }),
   };
-  return { workerEnv, limitSpy };
+  return { workerEnv, limitSpy, durableSpy };
 }
 
 function apiRequest(body: unknown, headers: Record<string, string> = {}): Request {
@@ -200,6 +217,37 @@ describe('admission controls', () => {
     const { workerEnv } = makeEnv({
       limitImpl: async () => {
         throw new Error('limiter down');
+      },
+    });
+    const response = await handleRequest(apiRequest(validBody), workerEnv);
+    expect(response.status).toBe(503);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('enforces the Durable Object cap of 3 per minute per IP before the paid call', async () => {
+    const { workerEnv, durableSpy } = makeEnv({
+      durableImpl: async () => ({ allowed: false, retryAfterSec: 42 }),
+    });
+    const response = await handleRequest(apiRequest(validBody, { 'cf-connecting-ip': '203.0.113.5' }), workerEnv);
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('42');
+    expect((await readJson(response)).error).toMatchObject({ code: 'RATE_LIMITED', retryable: true });
+    expect(durableSpy).toHaveBeenCalledWith({ key: '203.0.113.5', limit: 3, windowSec: 60 });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the Durable Object binding is missing', async () => {
+    const { workerEnv } = makeEnv({ noDurableLimiter: true });
+    const response = await handleRequest(apiRequest(validBody), workerEnv);
+    expect(response.status).toBe(503);
+    expect((await readJson(response)).error).toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the Durable Object check throws', async () => {
+    const { workerEnv } = makeEnv({
+      durableImpl: async () => {
+        throw new Error('do down');
       },
     });
     const response = await handleRequest(apiRequest(validBody), workerEnv);
