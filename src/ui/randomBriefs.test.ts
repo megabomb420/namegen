@@ -22,12 +22,21 @@ describe('random briefs', () => {
     }
   });
 
-  it('includes genre-targeted briefs and their slants', () => {
+  it('carries genre flavour without genre labels and keeps the slants', () => {
     const joined = RANDOM_BRIEFS.join('|');
-    expect(joined).toContain('UK garage');
-    expect(joined).toContain('boom-bap');
-    expect(joined).toContain('Dark: ');
-    expect(joined).toContain('Instrumental: ');
+    const joinedLower = RANDOM_BRIEFS.join('|').toLowerCase();
+    // No 'Hip-hop:' style labels inside briefs.
+    for (const label of ['hip-hop:', 'uk garage:', 'electronic:']) {
+      expect(joinedLower).not.toContain(label);
+    }
+    // The flavour words still exist.
+    expect(joinedLower).toContain('boom-bap');
+    expect(joinedLower).toContain('808s');
+    expect(joinedLower).toContain('dark: ');
+    expect(joinedLower).toContain('instrumental: ');
+    // Nonsense items removed.
+    expect(joinedLower).not.toContain('carrier wave');
+    expect(joinedLower).not.toContain('seagull');
   });
 
   it('keeps returning a valid idea even when forced to the same index', () => {

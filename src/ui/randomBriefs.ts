@@ -7,16 +7,17 @@
  */
 
 /**
- * Genre-flavoured briefs (formerly the style dropdown options). Every entry
- * ends with a light, unexpected twist so a rolled brief never reads generic.
+ * Genre-flavoured briefs (formerly the style dropdown options). No genre label
+ * in the text — the description carries the flavour. Every entry ends with a
+ * light, unexpected twist so a rolled brief never reads generic.
  */
 const GENRE_BRIEFS: readonly string[] = [
-  'Hip-hop: boom-bap drums over a dusty sample flip, someone rhyming about the corner store, bass that moves air in the room — and the hook is an old answering-machine message from 1998.',
-  'Wave: slow, weightless synth chords and sparse 808s in half-time, a voice treated like it is underwater, wide empty space between the notes — plus one stubborn field recording of someone unlocking a bike.',
-  'UK garage: a 2-step shuffle with swingy off-beat bass and chopped stabs, rooftop-party energy under a light rain — the melody is carried by a dripping tap.',
-  'Future garage: half-time garage with widescreen pads, sub-bass throbs and a rinsed vocal chop echoing over the drop — the vocal is a grandmother humming through a desk fan.',
-  'Drum & bass: a breakbeat chopped into new shapes at 174, rolling bassline and amen variations, rain-slick streets at speed — the break itself comes from a dishwasher cycle.',
-  'Electronic: modular bleeps over a sturdy kick, west-coast acid lines, an arrangement that keeps breathing and shifting — until a seagull lands on the mix and stays in tune.',
+  'Boom-bap drums over a dusty sample flip, someone rhyming about the corner store, bass that moves air in the room — and the hook is an old answering-machine message from 1998.',
+  'Slow, weightless synth chords and sparse 808s in half-time, a voice treated like it is underwater, wide empty space between the notes — plus one stubborn field recording of someone unlocking a bike.',
+  'A 2-step shuffle with swingy off-beat bass and chopped stabs, rooftop-party energy under a light rain — the melody is carried by a dripping tap.',
+  'Half-time garage with widescreen pads, sub-bass throbs and a rinsed vocal chop echoing over the drop — the vocal is a grandmother humming through a desk fan.',
+  'A breakbeat chopped into new shapes at 174, rolling bassline and amen variations, rain-slick streets at speed — the break itself comes from a dishwasher cycle.',
+  'Modular bleeps over a sturdy kick, west-coast acid lines, an arrangement that keeps breathing and shifting — until a cheap Casio preset sneaks in and steals the drop.',
 ];
 
 const GENRE_SLANTS: readonly string[] = ['Dark: ', 'Atmospheric: ', 'Instrumental: '];
@@ -30,7 +31,7 @@ const CONCRETE_IDEAS: readonly string[] = [
   'Wind across an empty stadium, seat numbers rattling, a lone trumpet trying scales in the tunnel.',
   'A sunrise watering ritual: kettle clicks, two cats arguing in another room.',
   'A ferry horn answered by a car alarm on shore; everything played at walking speed.',
-  'A dial-up modem handshake stretched into a drone, then a lullaby riding the carrier wave.',
+  'A church organ rehearsing scales alone after a wedding, dust motes in the light, one broken key.',
   'Cash register and coin sorter as percussion, a bossa nova played on a toy xylophone.',
   'Fog over a parking lot, footsteps on wet asphalt, the distant hum of a 24-hour laundromat.',
   'Typewriter keys, the page-up lever, a desk fan clicking; arrange like a library after closing.',
