@@ -908,3 +908,122 @@ input:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* --- styled brief tools + alias card -------------------------------------- */
+
+.style-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.style-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.style-pick label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+.style-pick select {
+  width: 100%;
+  min-height: var(--hit);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.style-pick select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.style-fill {
+  min-height: var(--hit);
+  white-space: nowrap;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  font-weight: 600;
+  padding: 0 14px;
+}
+
+.style-fill:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.alias-card {
+  border: 1px dashed var(--line);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.alias-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.alias-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.chip-like {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+}
+
+.alias-roll {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.alias-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 4px 6px 14px;
+}
+
+.alias-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.alias-actions {
+  flex: none;
+  display: flex;
+}

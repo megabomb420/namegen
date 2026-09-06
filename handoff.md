@@ -74,6 +74,10 @@ Local secrets go in `.dev.vars` (template: `.dev.vars.example`, gitignored). Clo
 - Create keeps a **separate remembered brief draft per mode** (Track/Release/Artist), memory-only
   per spec §7 (cleared by Clear working session, empty after reload). A **dice button** fills the
   active brief with a random curated idea (`src/ui/randomBriefs.ts`, no warning-sign vocabulary).
+  A **style dropdown** (hip-hop, wave, UK garage, future garage, drum & bass, electronic) plus a
+  **variant picker** (dark / instrumental / atmospheric / —) composes a matching brief into the
+  field. In Artist mode a **Wu-Tang-style alias roller** generates random two-word stage names
+  locally (no provider call), excluding real Wu-Tang Clan aliases.
   Offline/online copy clarified: saved names and restored results open offline; generating names
   always needs the internet (DeepSeek).
 

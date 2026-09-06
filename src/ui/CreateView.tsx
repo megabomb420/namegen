@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { countCodePoints } from '../../shared/text';
 import type { AppStore } from '../state/appStore';
 import { activeBrief, findSaved } from '../state/helpers';
@@ -5,7 +6,9 @@ import type { AppState, DisplayBatch } from '../state/types';
 import { NameRow } from './NameRow';
 import { MODE_OPTIONS, LENGTH_OPTIONS, MODE_LABELS } from './labels';
 import { pickRandomBrief } from './randomBriefs';
-import { ShuffleIcon } from './icons';
+import { rollAlias } from './aliasGenerator';
+import { composeBrief, STYLES, VARIANTS, type StyleId, type VariantId } from './styleBriefs';
+import { ChevronRightIcon, CopyIcon, ShuffleIcon, StarFilledIcon, StarIcon } from './icons';
 
 interface CreateViewProps {
   state: AppState;
@@ -22,6 +25,12 @@ export function CreateView({ state, store }: CreateViewProps) {
   const batch = state.batches[state.viewIndex] ?? null;
   const hasHistory = state.batches.length > 1;
   const canSubmit = !busy && !briefOver;
+  const [style, setStyle] = useState<StyleId>('hip-hop');
+  const [variant, setVariant] = useState<VariantId>('none');
+  const [alias, setAlias] = useState<string | null>(null);
+
+  const fillStyledBrief = () => store.setBrief(composeBrief(style, variant));
+  const rollNewAlias = () => setAlias(rollAlias(alias));
 
   return (
     <section className="view create-view" aria-label="Create names">
@@ -37,6 +46,74 @@ export function CreateView({ state, store }: CreateViewProps) {
             {option.label}
           </button>
         ))}
+      </div>
+
+      {state.mode === 'artist' && (
+        <div className="alias-card">
+          <div className="alias-head">
+            <span className="alias-title">Hip-hop alias · Wu-Tang style</span>
+            <button type="button" className="quiet chip-like" onClick={rollNewAlias}>
+              <ShuffleIcon size={16} />
+              Roll again
+            </button>
+          </div>
+          {alias === null ? (
+            <button type="button" className="alias-roll" onClick={rollNewAlias}>
+              Roll a Wu-style alias
+            </button>
+          ) : (
+            <div className="alias-result">
+              <span className="alias-name">{alias}</span>
+              <div className="alias-actions">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-pressed={findSaved(state.shortlist, alias, 'artist') !== -1}
+                  aria-label={findSaved(state.shortlist, alias, 'artist') !== -1 ? `Remove “${alias}” from shortlist` : `Save “${alias}” to shortlist`}
+                  onClick={() => store.toggleSave(alias, 'artist')}
+                >
+                  {findSaved(state.shortlist, alias, 'artist') !== -1 ? <StarFilledIcon size={20} /> : <StarIcon size={20} />}
+                </button>
+                <button type="button" className="icon-button" aria-label={`Copy “${alias}”`} onClick={() => void store.copyName(alias)}>
+                  <CopyIcon size={20} />
+                </button>
+                <button type="button" className="icon-button" aria-label={`Explore “${alias}” for more like this`} onClick={() => store.openSavedExplore(alias, 'artist')}>
+                  <ChevronRightIcon size={20} />
+                </button>
+              </div>
+            </div>
+          )}
+          <p className="micro-note">
+            Random two-word stage names in the classic Wu-Tang generator spirit. Local only — not
+            affiliated with the group, and never a real alias.
+          </p>
+        </div>
+      )}
+
+      <div className="style-tools" aria-label="Styled brief">
+        <div className="style-pick">
+          <label htmlFor="brief-style">Style</label>
+          <select id="brief-style" value={style} onChange={(event) => setStyle(event.target.value as StyleId)}>
+            {STYLES.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="style-pick">
+          <label htmlFor="brief-variant">Variant</label>
+          <select id="brief-variant" value={variant} onChange={(event) => setVariant(event.target.value as VariantId)}>
+            {VARIANTS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button type="button" className="style-fill" onClick={fillStyledBrief}>
+          Write brief
+        </button>
       </div>
 
       <div className="field">
