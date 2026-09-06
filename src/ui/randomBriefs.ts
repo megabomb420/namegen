@@ -20,8 +20,6 @@ const GENRE_BRIEFS: readonly string[] = [
   'Modular bleeps over a sturdy kick, west-coast acid lines, an arrangement that keeps breathing and shifting — until a cheap Casio preset sneaks in and steals the drop.',
 ];
 
-const GENRE_SLANTS: readonly string[] = ['Dark: ', 'Atmospheric: ', 'Instrumental: '];
-
 /** Concrete sensory ideas that work in any genre. */
 const CONCRETE_IDEAS: readonly string[] = [
   'Rain on a tin roof at 4am, a Wurlitzer organ through one speaker, faint hiss between verses.',
@@ -46,11 +44,7 @@ const CONCRETE_IDEAS: readonly string[] = [
   'A grandfather clock and a digital alarm competing in different rooms; resolve them kindly.',
 ];
 
-export const RANDOM_BRIEFS: readonly string[] = [
-  ...CONCRETE_IDEAS,
-  ...GENRE_BRIEFS,
-  ...GENRE_BRIEFS.flatMap((genre) => GENRE_SLANTS.map((slant) => `${slant}${genre}`)),
-];
+export const RANDOM_BRIEFS: readonly string[] = [...CONCRETE_IDEAS, ...GENRE_BRIEFS];
 
 /** Picks a random idea, never the same one twice in a row when avoidable. */
 export function pickRandomBrief(previous: string | null = null, rand: () => number = Math.random): string {

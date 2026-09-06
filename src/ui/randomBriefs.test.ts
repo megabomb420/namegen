@@ -3,7 +3,7 @@ import { RANDOM_BRIEFS, pickRandomBrief } from './randomBriefs';
 
 describe('random briefs', () => {
   it('has enough varied, bounded ideas', () => {
-    expect(RANDOM_BRIEFS.length).toBeGreaterThanOrEqual(40);
+    expect(RANDOM_BRIEFS.length).toBeGreaterThanOrEqual(24);
     for (const idea of RANDOM_BRIEFS) {
       expect(idea.trim().length).toBeGreaterThan(0);
       expect([...idea].length).toBeLessThanOrEqual(2000);
@@ -22,18 +22,15 @@ describe('random briefs', () => {
     }
   });
 
-  it('carries genre flavour without genre labels and keeps the slants', () => {
-    const joined = RANDOM_BRIEFS.join('|');
+  it('carries genre flavour without genre labels or slant prefixes', () => {
     const joinedLower = RANDOM_BRIEFS.join('|').toLowerCase();
-    // No 'Hip-hop:' style labels inside briefs.
-    for (const label of ['hip-hop:', 'uk garage:', 'electronic:']) {
+    // No 'Hip-hop:' style labels and no dark/atmospheric/instrumental prefixes.
+    for (const label of ['hip-hop:', 'uk garage:', 'electronic:', 'dark:', 'atmospheric:', 'instrumental:']) {
       expect(joinedLower).not.toContain(label);
     }
     // The flavour words still exist.
     expect(joinedLower).toContain('boom-bap');
     expect(joinedLower).toContain('808s');
-    expect(joinedLower).toContain('dark: ');
-    expect(joinedLower).toContain('instrumental: ');
     // Nonsense items removed.
     expect(joinedLower).not.toContain('carrier wave');
     expect(joinedLower).not.toContain('seagull');
