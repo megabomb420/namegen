@@ -3,7 +3,7 @@ import { RANDOM_BRIEFS, pickRandomBrief } from './randomBriefs';
 
 describe('random briefs', () => {
   it('has enough varied, bounded ideas', () => {
-    expect(RANDOM_BRIEFS.length).toBeGreaterThanOrEqual(12);
+    expect(RANDOM_BRIEFS.length).toBeGreaterThanOrEqual(40);
     for (const idea of RANDOM_BRIEFS) {
       expect(idea.trim().length).toBeGreaterThan(0);
       expect([...idea].length).toBeLessThanOrEqual(2000);
@@ -16,19 +16,18 @@ describe('random briefs', () => {
 
   it('never returns the previous idea when a different one exists', () => {
     const previous = RANDOM_BRIEFS[0];
-    const counter = () => {
-      // Force the first pick to collide, proving the filter works.
-      let n = 0;
-      return () => {
-        n += 1;
-        return n === 1 ? 0 : 0.5;
-      };
-    };
-    let picked = pickRandomBrief(previous, counter());
-    for (let i = 0; i < 50; i++) {
-      picked = pickRandomBrief(previous);
+    for (let i = 0; i < 80; i++) {
+      const picked = pickRandomBrief(previous);
       expect(picked).not.toBe(previous);
     }
+  });
+
+  it('includes genre-targeted briefs and their slants', () => {
+    const joined = RANDOM_BRIEFS.join('|');
+    expect(joined).toContain('UK garage');
+    expect(joined).toContain('boom-bap');
+    expect(joined).toContain('Dark: ');
+    expect(joined).toContain('Instrumental: ');
   });
 
   it('keeps returning a valid idea even when forced to the same index', () => {

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { countCodePoints } from '../../shared/text';
 import type { AppStore } from '../state/appStore';
 import { activeBrief, findSaved } from '../state/helpers';
@@ -6,7 +5,6 @@ import type { AppState, DisplayBatch } from '../state/types';
 import { NameRow } from './NameRow';
 import { MODE_OPTIONS, LENGTH_OPTIONS, MODE_LABELS } from './labels';
 import { pickRandomBrief } from './randomBriefs';
-import { composeBrief, STYLES, VARIANTS, type StyleId, type VariantId } from './styleBriefs';
 import { ShuffleIcon } from './icons';
 
 interface CreateViewProps {
@@ -24,10 +22,6 @@ export function CreateView({ state, store }: CreateViewProps) {
   const batch = state.batches[state.viewIndex] ?? null;
   const hasHistory = state.batches.length > 1;
   const canSubmit = !busy && !briefOver;
-  const [style, setStyle] = useState<StyleId>('hip-hop');
-  const [variant, setVariant] = useState<VariantId>('none');
-
-  const fillStyledBrief = () => store.setBrief(composeBrief(style, variant));
   const aliasBusy = state.requestActive && state.pending?.kind === 'alias';
 
   return (
@@ -61,32 +55,6 @@ export function CreateView({ state, store }: CreateViewProps) {
         </div>
       )}
 
-      <div className="style-tools" aria-label="Styled brief">
-        <div className="style-pick">
-          <label htmlFor="brief-style">Style</label>
-          <select id="brief-style" value={style} onChange={(event) => setStyle(event.target.value as StyleId)}>
-            {STYLES.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="style-pick">
-          <label htmlFor="brief-variant">Variant</label>
-          <select id="brief-variant" value={variant} onChange={(event) => setVariant(event.target.value as VariantId)}>
-            {VARIANTS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button type="button" className="style-fill" onClick={fillStyledBrief}>
-          Write brief
-        </button>
-      </div>
-
       <div className="field">
         <div className="field-head">
           <label htmlFor="brief">Brief</label>
@@ -97,8 +65,8 @@ export function CreateView({ state, store }: CreateViewProps) {
             <button
               type="button"
               className="dice"
-              aria-label="Random idea for the brief"
-              title="Fill the brief with a random idea"
+              aria-label="Random idea or genre brief"
+              title="Fill the brief with a random idea or genre brief"
               onClick={() => store.setBrief(pickRandomBrief(brief === '' ? null : brief))}
             >
               <ShuffleIcon size={16} />

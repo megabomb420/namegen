@@ -909,59 +909,6 @@ input:focus-visible {
   }
 }
 
-/* --- styled brief tools + alias card -------------------------------------- */
-
-.style-tools {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
-  align-items: end;
-}
-
-.style-pick {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.style-pick label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--dim);
-}
-
-.style-pick select {
-  width: 100%;
-  min-height: var(--hit);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--text);
-  padding: 0 10px;
-}
-
-.style-pick select:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.style-fill {
-  min-height: var(--hit);
-  white-space: nowrap;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--text);
-  font-weight: 600;
-  padding: 0 14px;
-}
-
-.style-fill:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
 .alias-card {
   border: 1px dashed var(--line);
   background: var(--surface);
