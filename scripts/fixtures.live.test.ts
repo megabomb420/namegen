@@ -66,15 +66,8 @@ runLive('creative fixtures (live DeepSeek, twice each)', () => {
     const truncatedCount = usageEvents.filter((e) => e.outcome === 'provider-truncated').length;
     const unusable = rows.filter((r) => r.names === null).length;
 
-    // Headroom: truncation inside the 800-token ceiling is a red flag.
-    expect(truncatedCount, 'truncated response within token ceiling').toBe(0);
-    // Both runs must produce usable names for the evaluation to pass; provider
-    // outages or validation failures must fail loudly, never report as passed.
-    expect(unusable, 'both fixture runs must succeed for a passing evaluation').toBe(0);
-    for (const run of rows) {
-      expect(run.names === null ? run.error : null, 'fixture run produced no usable names').toBeNull();
-    }
-
+    // Print evidence first so a failing run still shows exactly what the
+    // provider returned before the assertions below throw.
     const header = `\n[${fixture.id}] ${fixture.label}`;
     const body = [
       `  run 1: ${run1.names === null ? `ERROR ${run1.error}` : run1.names.join(' | ')}`,
@@ -83,5 +76,14 @@ runLive('creative fixtures (live DeepSeek, twice each)', () => {
     ].join('\n');
     // eslint-disable-next-line no-console
     console.log(header + '\n' + body);
+
+    // Headroom: truncation inside the 800-token ceiling is a red flag.
+    expect(truncatedCount, 'truncated response within token ceiling').toBe(0);
+    // Both runs must produce usable names for the evaluation to pass; provider
+    // outages or validation failures must fail loudly, never report as passed.
+    expect(unusable, 'both fixture runs must succeed for a passing evaluation').toBe(0);
+    for (const run of rows) {
+      expect(run.names === null ? run.error : null, 'fixture run produced no usable names').toBeNull();
+    }
   }, 120_000);
 });

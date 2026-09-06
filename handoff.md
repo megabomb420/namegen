@@ -1,6 +1,6 @@
 # Implementation handoff — [HANDOFF]
 
-Updated: 2026-09-06 (implementation complete; review findings fixed; live-provider, deployment, and device checks still unverified).
+Updated: 2026-09-06 (implementation complete; review findings fixed; **live DeepSeek creative run passed 12/12** — see `creative-results-2026-09-06.md`; deploy and device checks still unverified).
 
 ## Current state
 
@@ -67,6 +67,9 @@ Local secrets go in `.dev.vars` (template: `.dev.vars.example`, gitignored). Clo
 Automated (all deterministic, mocked, in CI form — `npm test`):
 - 105 passing tests + clean `tsc --noEmit` + production build. Coverage includes: surplus selection & discard; partial batches; zero-valid output; overlength (code-point) and control-character entries; Unicode duplicates incl. full case folding; malformed/truncated provider content and missing/null/non-`stop` finish reasons rejected, never reconstructed; extra-key/overlong-array rejection; avoid+seed exclusion; provider 429/5xx/network/timeout mapping; 24KB body cap (streamed); routing 404/405; content-type 415; kill switch; missing key and missing/broken limiter fail closed; limiter deny → 429 + Retry-After; stale-response and cleared-work races; single active request enforced at the transport layer (concurrent attempts refused until settlement); retry-snapshot identity; refinement batches entering the bounded recovery list and persisting without raw context; saved-name local exploration; session-clear failure surfacing; storage corruption/blocking/full; shortlist 300-cap without eviction; the main journey (Generate → Explore → Save → Reload → Copy); network-failure UI; Explore text editing keeping keyboard focus.
 
+Live provider (real DeepSeek key, 2026-09-06, via `npm run fixtures`):
+- Full pass 12/12 fixtures × 2 runs, zero unusable runs, zero truncation. Highest completion tokens 67 (Japanese; Arabic 61; English ≤ 59) — well under the 800 ceiling, so multilingual headroom is empirically confirmed for the JP/AR fixtures. Names, per-run lists, duplicate counts and quality observations are recorded in `creative-results-2026-09-06.md`; provisional read of the ≥75% plausible-candidate gate is met for every non-cliché batch, pending the human reviewer. One transient upstream anomaly (r-artist-spanish failing under sustained load, passing in isolation and in the recorded run) is documented there; the fixtures runner prints evidence before its assertions and fails loudly, and manual single-fixture rerun is the procedure. Live smoke of a blank generate via the full HTTP-less service path also succeeded.
+
 External-review regressions (`findings.md`): all ten findings are fixed and covered — outbound body asserts `thinking: { type: "disabled" }` (F1); focus effect keyed on sheet open/close with a UI test typing in the textarea (F2); transport lock held until settlement with concurrent-attempt tests (F3); disclosure copy scoped + DeepSeek retention disclaimed (F4); refine batches persisted into recovery with Previous/Back reachable (F5); saved-name Explore UI + store tests (F6); finish-reason null/missing/content_filter rejection tests (F7); Straße/STRASSE and final-sigma fold tests (F8); clear-session failure toast/notice tests (F9); fixtures moved to an explicit opt-in config that also fails when either run produces no usable names (F10).
 
 Local Worker smoke test (`wrangler dev`, workerd, real localhost HTTP, **no** DeepSeek key):
@@ -75,11 +78,25 @@ Local Worker smoke test (`wrangler dev`, workerd, real localhost HTTP, **no** De
 Service-worker inspection (build output):
 - Precache contains only `index.html`, hashed JS/CSS, icons, favicon, manifest; navigation fallback to `/index.html` carries `denylist: [/^\/api\//]`; no runtime API caching. (Verified by reading `dist/sw.js`, not in a browser.)
 
-## Unverified (no credentials / devices / account access)
+## Unverified / open (no credentials, devices, or account access)
 
-- **Live DeepSeek generation** — no `DEEPSEEK_API_KEY` was available in this environment, and the review-fix pass changed generation behaviour (thinking disabled, strict `stop` completion), so the creative-fixture rerun this warrants has NOT been performed. `npm run fixtures` runs the 12 committed fixtures (all modes; blank context; detailed concrete briefs; reference-as-qualities; a lyric excerpt; Japanese and Arabic input for multilingual token headroom; two refinements incl. Spanish) twice through the real naming-core modules and prints side-by-side runs, exact-duplicate counts and max completion tokens. It is explicitly opted in (vitest.fixtures.config.ts; excluded from `npm test`) and now fails unless both runs of every fixture produce usable names. Run it with a key; a human must then judge the ≥75% plausible-candidate gate, repeated roots/templates across runs, and multilingual truncation headroom at the 800-token ceiling. Until then the §12 quality gate is unverified.
-- **Cloudflare deployment / kill switch / spending safeguard** — no Cloudflare credentials. The kill switch and limiter are code-verified but not deployed; the provider-enforced spending safeguard (or bounded prepaid funding without auto top-ups) is an external DeepSeek/billing configuration that still must be made before public launch; development calls consume the same DeepSeek funds.
-- **Physical-device PWA behaviour** — Android Chrome and iOS Safari install, offline operation, and interrupted/restarted sessions were not checked on real devices (no devices/emulators here). Service-worker behaviour was verified only by static inspection of the generated worker and the local Worker run, not browser emulation — do not treat this as device evidence.
+- **Live creative quality — human gate.** Live runs succeeded (evidence above and in
+  `creative-results-2026-09-06.md`), but the final §12 judgement (≥75% plausible candidates in
+  first batches, refinement relationship/instruction quality, repeated-root inspection) is a
+  human review of the recorded names that is still open. Rerun `npm run fixtures` after any
+  future prompt or generation-setting change.
+- **Cloudflare deployment / kill switch / spending safeguard** — no Cloudflare credentials in
+  this environment. Deploy is being done manually by the maintainer; the kill switch and limiter
+  are code-verified but not yet deployed. The provider-enforced spending safeguard (or bounded
+  prepaid funding without auto top-ups) must be configured in the DeepSeek billing panel before
+  public launch; development calls consume the same DeepSeek funds.
+- **Physical-device PWA behaviour** — Android Chrome and iOS Safari install, offline operation,
+  and interrupted/restarted sessions were not checked on real devices (no devices/emulators
+  here). Service-worker behaviour was verified only by static inspection of the generated worker
+  and the local Worker run, not browser emulation — do not treat this as device evidence.
+- **API key hygiene** — the live key used on 2026-09-06 was pasted into a chat transcript; it
+  should be rotated in the DeepSeek panel once deploy testing is done. `.dev.vars` holds the
+  local copy and is gitignored; production uses `wrangler secret put DEEPSEEK_API_KEY`.
 
 ## Unresolved issues
 
