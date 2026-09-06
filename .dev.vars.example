@@ -1,0 +1,6 @@
+# Local secrets template for `wrangler dev`. Copy to `.dev.vars` and fill in.
+# Never commit `.dev.vars`. Production secrets are set with:
+#   wrangler secret put DEEPSEEK_API_KEY
+#   wrangler secret put GENERATION_DISABLED   (optional: "true" trips the kill switch)
+
+DEEPSEEK_API_KEY=

@@ -1,0 +1,200 @@
+import { countCodePoints } from '../../shared/text';
+import type { AppStore } from '../state/appStore';
+import { findSaved } from '../state/helpers';
+import type { AppState, DisplayBatch } from '../state/types';
+import { NameRow } from './NameRow';
+import { MODE_OPTIONS, LENGTH_OPTIONS, MODE_LABELS } from './labels';
+
+interface CreateViewProps {
+  state: AppState;
+  store: AppStore;
+}
+
+export function CreateView({ state, store }: CreateViewProps) {
+  const briefLength = countCodePoints(state.brief);
+  const briefOver = briefLength > 2000;
+  const busy = state.pending !== null;
+  const batch = state.batches[state.viewIndex] ?? null;
+  const hasHistory = state.batches.length > 1;
+  const canSubmit = !busy && !briefOver;
+
+  return (
+    <section className="view create-view" aria-label="Create names">
+      <div className="mode-group" role="group" aria-label="What are you naming?">
+        {MODE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={`segment${state.mode === option.value ? ' segment-on' : ''}`}
+            aria-pressed={state.mode === option.value}
+            onClick={() => store.setMode(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="field">
+        <div className="field-head">
+          <label htmlFor="brief">Brief</label>
+          <span className={`count${briefOver ? ' count-over' : ''}`} aria-live="polite">
+            {briefLength}/2000
+          </span>
+        </div>
+        <textarea
+          id="brief"
+          rows={4}
+          value={state.brief}
+          onChange={(event) => store.setBrief(event.target.value)}
+          placeholder="Sound, mood, story, keywords, references or a short lyric — optional."
+        />
+        {briefOver && (
+          <p className="field-error" role="alert">
+            The brief is over the 2,000-character limit. Trim it before generating.
+          </p>
+        )}
+      </div>
+
+      <div className="options">
+        <button
+          type="button"
+          className="options-toggle"
+          aria-expanded={state.optionsOpen}
+          onClick={() => store.toggleOptions()}
+        >
+          Options
+        </button>
+        {state.optionsOpen && (
+          <div className="options-panel">
+            <div className="field">
+              <div className="field-head">
+                <label htmlFor="language">Language</label>
+              </div>
+              <input
+                id="language"
+                type="text"
+                inputMode="text"
+                value={state.language}
+                onChange={(event) => store.setLanguage(event.target.value)}
+                placeholder="English"
+                autoComplete="off"
+              />
+            </div>
+            <div className="field">
+              <span className="field-label">Length</span>
+              <div className="mode-group" role="group" aria-label="Name length">
+                {LENGTH_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`segment${state.length === option.value ? ' segment-on' : ''}`}
+                    aria-pressed={state.length === option.value}
+                    onClick={() => store.setLength(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button type="button" className="quiet-danger" onClick={() => store.clearWorkingSession()}>
+              Clear working session
+            </button>
+            <p className="micro-note">
+              Removes this session&apos;s results and drafts. Your shortlist is kept.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <button type="button" className="primary" disabled={!canSubmit} onClick={() => store.generate()}>
+        {busy ? 'Naming…' : state.brief.trim() === '' ? 'Surprise me' : 'Generate'}
+      </button>
+      <p className="privacy-note">
+        Context you add and names you saw recently are sent to DeepSeek for naming only. Nothing is
+        stored on a server.
+      </p>
+
+      <div className="live-region" aria-live="polite">
+        {busy && <p className="status-line">Naming…</p>}
+      </div>
+
+      {state.error !== null && (
+        <div className="error-banner" role="alert">
+          <p>{state.error.message}</p>
+          {state.error.retryable && state.errorSnapshot !== null && !busy && (
+            <button type="button" className="banner-action" onClick={() => store.retryFailedRequest()}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+
+      {batch === null && !busy && state.error === null && (
+        <div className="empty-hint">
+          <p>No names yet.</p>
+          <p>Describe the track, drop a lyric, or leave it blank and tap Surprise me.</p>
+        </div>
+      )}
+
+      {batch !== null && (
+        <div className="results" aria-label={`Results — ${MODE_LABELS[batch.mode]}`}>
+          <div className="results-head">
+            <h2>Names</h2>
+            {hasHistory && (
+              <div className="batch-nav">
+                <button
+                  type="button"
+                  disabled={state.viewIndex === 0}
+                  onClick={() => store.setViewIndex(state.viewIndex - 1)}
+                >
+                  Older
+                </button>
+                <span aria-hidden="true">
+                  {state.viewIndex + 1} / {state.batches.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={state.viewIndex === state.batches.length - 1}
+                  onClick={() => store.setViewIndex(state.viewIndex + 1)}
+                >
+                  Newer
+                </button>
+              </div>
+            )}
+          </div>
+          <p className="hint-line">Tap a name to explore nearby ideas.</p>
+          {batch.partial && <p className="partial-note">A smaller batch this time.</p>}
+          <ResultList batch={batch} state={state} store={store} />
+          <p className="availability-note">Availability not checked.</p>
+        </div>
+      )}
+
+      <p className="session-note">
+        Names stay in this browser session until you clear it. They can be derived from what you
+        wrote and are not securely erased when the tab closes.
+      </p>
+    </section>
+  );
+}
+
+function ResultList({ batch, state, store }: { batch: DisplayBatch; state: AppState; store: AppStore }) {
+  return (
+    <ul className="name-list">
+      {batch.names.map((name) => {
+        const saved = findSaved(state.shortlist, name, batch.mode) !== -1;
+        return (
+          <li key={`${batch.id}-${name}`}>
+            <NameRow
+              name={name}
+              mode={batch.mode}
+              saved={saved}
+              onOpen={() => store.openExplore(name, batch)}
+              onToggleSave={() => store.toggleSave(name, batch.mode)}
+              onCopy={() => void store.copyName(name)}
+            />
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

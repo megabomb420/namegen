@@ -1,0 +1,103 @@
+[
+  {
+    "id": "g-track-blank",
+    "label": "Track generate, blank context",
+    "request": { "operation": "generate", "mode": "track" }
+  },
+  {
+    "id": "g-artist-blank",
+    "label": "Artist generate, blank context",
+    "request": { "operation": "generate", "mode": "artist" }
+  },
+  {
+    "id": "g-release-blank",
+    "label": "Release generate, blank context",
+    "request": { "operation": "generate", "mode": "release" }
+  },
+  {
+    "id": "g-track-detailed",
+    "label": "Track generate, detailed concrete brief",
+    "request": {
+      "operation": "generate",
+      "mode": "track",
+      "brief": "A house track built from a rattling bicycle chain sample, pitched-down music-box melody, recorded in a concrete stairwell at 2am. It should feel mechanical but tender, like a vending machine playing a lullaby."
+    }
+  },
+  {
+    "id": "g-release-detailed",
+    "label": "Release generate, broad-concept brief",
+    "request": {
+      "operation": "generate",
+      "mode": "release",
+      "brief": "An EP of coastal field recordings cut into slow techno: foghorns, pier pylons, a seaside radio playing through static. The title should carry the mood of a town between seasons, seen from the water at dusk."
+    }
+  },
+  {
+    "id": "g-artist-qualities",
+    "label": "Artist generate from reference qualities",
+    "request": {
+      "operation": "generate",
+      "mode": "artist",
+      "brief": "A solo producer who sounds like a cross between a haunted fairground organ and early Chicago footwork. Pronounceable, memorable, no real names."
+    }
+  },
+  {
+    "id": "g-track-lyric",
+    "label": "Track generate from a lyric excerpt",
+    "request": {
+      "operation": "generate",
+      "mode": "track",
+      "brief": "Title ideas from this lyric fragment: 'the kettle sings the whole block awake / you fold the morning into your coat / and the radio argues with the rain'"
+    }
+  },
+  {
+    "id": "g-track-japanese",
+    "label": "Track generate, multilingual input (Japanese)",
+    "request": {
+      "operation": "generate",
+      "mode": "track",
+      "language": "Japanese",
+      "brief": "夜の商店街を走る自転車の音と、閉店間際の銭湯の湯気からできた曲。短くて具体的なタイトルを。"
+    }
+  },
+  {
+    "id": "g-release-arabic",
+    "label": "Release generate, multilingual input (Arabic)",
+    "request": {
+      "operation": "generate",
+      "mode": "release",
+      "language": "Arabic",
+      "brief": "ألبوم عن ليلة في ميناء متوسطي: أصوات مراكب، مقهى مفتوح، وراديو قديم يذيع أغاني الستينيات."
+    }
+  },
+  {
+    "id": "g-track-cliche-explicit",
+    "label": "Track generate, explicit cliché request",
+    "request": {
+      "operation": "generate",
+      "mode": "track",
+      "brief": "I want a dreamy atmospheric title using neon, echoes, midnight, shadows and whispers — the classic synthwave vocabulary. Make it beautiful."
+    }
+  },
+  {
+    "id": "r-track-shorter",
+    "label": "Refine track: shorter and more concrete",
+    "request": {
+      "operation": "refine",
+      "mode": "track",
+      "seed": "Vending Machine Lullaby",
+      "instruction": "Shorter, more concrete, less poetic."
+    }
+  },
+  {
+    "id": "r-artist-spanish",
+    "label": "Refine artist: more pronounceable, in Spanish",
+    "request": {
+      "operation": "refine",
+      "mode": "artist",
+      "language": "Spanish",
+      "seed": "Fairground Ghost",
+      "instruction": "Más corto y fácil de pronunciar, mantén la sensación de feria encantada."
+    }
+  }
+]
