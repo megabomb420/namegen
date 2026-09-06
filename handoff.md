@@ -85,14 +85,15 @@ Service-worker inspection (build output):
   first batches, refinement relationship/instruction quality, repeated-root inspection) is a
   human review of the recorded names that is still open. Rerun `npm run fixtures` after any
   future prompt or generation-setting change.
-- **Cloudflare deployment** — **DONE 2026-09-06**: Worker + static assets live at
+- **Cloudflare deployment — LIVE.** 2026-09-06: Worker + static assets live at
   https://namegen.whip-blanket.workers.dev (wrangler OAuth, account “Whip Blanket”). Verified on
-  the deployed URL: SPA 200, `/api/*` JSON 404/405/415/400 behaviour, and the production kill
-  switch returning 503 before any provider contact. Deployed **with `GENERATION_DISABLED=true`**
-  (kill switch ON) as a staged rollout — no DeepSeek spend can occur until the switch is removed.
-  To go live: (1) configure the provider-enforced spending safeguard / bounded prepaid funding in
-  the DeepSeek billing panel, then (2) `wrangler secret delete GENERATION_DISABLED`. The
-  rate-limit binding (`RATE_LIMITER`, 10 req/60 s per IP) deployed cleanly with namespace `1001`.
+  the deployed URL: SPA 200, `/api/*` JSON 404/405 behaviour, production kill switch returning
+  503 (staged rollout), then **generation enabled** (kill-switch secret deleted after the
+  maintainer confirmed DeepSeek spending limits are set) and verified live: two `POST
+  /api/generate` calls returned 200 with 6 valid names each and `cache-control: no-store`
+  (blank-brief and coastal-release examples). Rate-limit binding (`RATE_LIMITER`, 10 req/60 s
+  per IP) deployed cleanly with namespace `1001`. Kill switch can be re-armed at any time via
+  `wrangler secret put GENERATION_DISABLED` (value `true`).
 - **Physical-device PWA behaviour** — Android Chrome and iOS Safari install, offline operation,
   and interrupted/restarted sessions were not checked on real devices (no devices/emulators
   here). Service-worker behaviour was verified only by static inspection of the generated worker
