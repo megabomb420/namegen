@@ -5,8 +5,8 @@
  * dependencies; the public result is the application contract only.
  */
 import type { NamingResult, NormalizedRequest } from '../shared/contracts';
-import { REQUEST_COUNTS, ALIAS_SETTINGS } from './config';
-import { ALIAS_SYSTEM } from './alias-prompt';
+import { REQUEST_COUNTS, THINKING_SETTINGS } from './config';
+import { ALIAS_SYSTEM, ALIAS_SYSTEM_EMO } from './alias-prompt';
 import { callChatCompletions, type DeepSeekUsage, type ProviderDeps } from './provider';
 import { normalizeRequest } from './validation';
 import { selectNames, type SelectionStats } from './selection';
@@ -37,9 +37,29 @@ export interface NamingServiceDeps {
   log?: (report: ServiceReport) => void;
 }
 
+/** Human-readable task per tab, sent in the payload so the model always knows
+ * exactly what it is producing in the active tab (track/release/artist/alias). */
+function taskLabel(request: NormalizedRequest): string {
+  if (request.operation === 'alias') {
+    return request.aliasStyle === 'emo'
+      ? 'You are handing out a sad, cloud-rap style artist alias.'
+      : 'You are handing out a Wu-Tang-style artist alias.';
+  }
+  const subject =
+    request.mode === 'track'
+      ? 'a single track'
+      : request.mode === 'release'
+        ? 'an album, EP or project (a broader concept)'
+        : 'an artist or producer identity';
+  return request.operation === 'refine'
+    ? `You are refining an existing name for ${subject}.`
+    : `You are naming ${subject}.`;
+}
+
 function buildPayload(request: NormalizedRequest): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     operation: request.operation,
+    task: taskLabel(request),
     mode: request.mode,
     brief: request.brief,
     avoid: request.avoid,
@@ -47,6 +67,9 @@ function buildPayload(request: NormalizedRequest): Record<string, unknown> {
   if (request.operation === 'refine' && request.seed !== null) {
     payload.seed = request.seed;
     payload.instruction = request.instruction;
+  }
+  if (request.operation === 'alias' && request.aliasStyle !== undefined) {
+    payload.aliasStyle = request.aliasStyle;
   }
   if (request.operation === 'generate' || request.operation === 'refine') {
     payload.language = request.language;
@@ -80,16 +103,20 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
   const counts = REQUEST_COUNTS[request.operation];
 
   const providerDeps: ProviderDeps = { fetchImpl, apiKey, ...(now !== undefined ? { now } : {}) };
-  // The alias operation runs the Wu-style persona with provider thinking
-  // ENABLED (authorized decision); naming keeps thinking disabled per spec §6.
+  // Naming (generate/refine) keeps thinking DISABLED per spec §6 — live runs
+  // with thinking enabled truncated on the 1500-token ceiling and took ~25s
+  // per call. The alias operation runs with thinking ENABLED and picks its
+  // persona from aliasStyle (wu | emo).
   const isAlias = request.operation === 'alias';
-  const result = await callChatCompletions(
-    buildPayload(request),
-    providerDeps,
-    isAlias
-      ? { systemPrompt: ALIAS_SYSTEM, thinking: 'enabled', reasoningEffort: ALIAS_SETTINGS.reasoningEffort, maxTokens: ALIAS_SETTINGS.maxTokens }
-      : {},
-  );
+  const aliasSystem = request.aliasStyle === 'emo' ? ALIAS_SYSTEM_EMO : ALIAS_SYSTEM;
+  const result = await callChatCompletions(buildPayload(request), providerDeps, isAlias
+    ? {
+        systemPrompt: aliasSystem,
+        thinking: THINKING_SETTINGS.thinking,
+        reasoningEffort: THINKING_SETTINGS.reasoningEffort,
+        maxTokens: THINKING_SETTINGS.maxTokens,
+      }
+    : {});
 
   switch (result.kind) {
     case 'timeout':

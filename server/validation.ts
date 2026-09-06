@@ -4,7 +4,7 @@
  * authoritative here; the browser performs the same checks for UX but the
  * server decides.
  */
-import type { LengthPref, Mode, NormalizedRequest, Operation } from '../shared/contracts';
+import type { AliasStyle, LengthPref, Mode, NormalizedRequest, Operation } from '../shared/contracts';
 import { LENGTH_PREFS, MODES, OPERATIONS } from '../shared/contracts';
 import {
   AVOID_MAX,
@@ -54,7 +54,7 @@ function optionalBoundedString(raw: Record<string, unknown>, key: string, max: n
 export function normalizeRequest(raw: unknown): RequestValidationResult {
   if (!isRecord(raw)) return fail('Request body must be a JSON object.');
 
-  const allowed = new Set(['operation', 'mode', 'brief', 'language', 'length', 'seed', 'instruction', 'avoid']);
+  const allowed = new Set(['operation', 'mode', 'brief', 'language', 'length', 'seed', 'instruction', 'avoid', 'aliasStyle']);
   for (const key of Object.keys(raw)) {
     if (!allowed.has(key)) return fail('Unexpected field in request.');
   }
@@ -111,6 +111,17 @@ export function normalizeRequest(raw: unknown): RequestValidationResult {
     return fail('Alias requests must use mode "artist".');
   }
 
+  let aliasStyle: AliasStyle | undefined;
+  if (raw.aliasStyle !== undefined) {
+    if (operation !== 'alias') return fail('Alias style is only allowed for alias requests.');
+    if (raw.aliasStyle !== 'wu' && raw.aliasStyle !== 'emo') {
+      return fail('Alias style must be "wu" or "emo".');
+    }
+    aliasStyle = raw.aliasStyle;
+  } else if (operation === 'alias') {
+    aliasStyle = 'wu';
+  }
+
   // Avoid list: bounded count, each entry bounded and clean, deduplicated by
   // comparison key. Duplicates never inflate the wire list.
   let avoid: string[] = [];
@@ -133,6 +144,6 @@ export function normalizeRequest(raw: unknown): RequestValidationResult {
     }
   }
 
-  const value: NormalizedRequest = { operation, mode, brief, language, length, seed, instruction, avoid };
+  const value: NormalizedRequest = { operation, mode, brief, language, length, seed, instruction, avoid, aliasStyle };
   return { ok: true, value };
 }

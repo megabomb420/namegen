@@ -78,10 +78,14 @@ Local secrets go in `.dev.vars` (template: `.dev.vars.example`, gitignored). Clo
   electronic, with dark/atmospheric/instrumental slants and a light unexpected twist on every
   entry) — the old style/variant dropdowns were removed in favour of this. In Artist mode the
   **Wu-style alias roller** (DeepSeek, thinking enabled) generates two-word stage names
-  via the real model: a server-side **alias** operation (artist-only, stable “Keeper of the Iron
-  Tongue” persona prompt, provider thinking ENABLED, 1500-token ceiling) returns six two-word
-  stage-name candidates into the normal results list; real Wu-Tang Clan member aliases are
-  excluded. Authorized deviation recorded in spec §6.
+  via the real model: a server-side **alias** operation (artist-only, provider thinking ENABLED,
+  2500-token ceiling) returns six two-word stage-name candidates into the normal results list.
+  Two stable personas selectable by `aliasStyle`: `wu` (“Keeper of the Iron Tongue”) and `emo`
+  (“Nobody's Darling”, sad cloud-rap); real members/artists are excluded. A `task` line in every
+  payload names the active tab so the model knows what it produces. Thinking was trialled on
+  generate/refine and reverted the same day (live fixtures truncated at the ceiling, ~25 s/call —
+  evidence in creative results); it remains enabled for alias only. Deviations recorded in spec
+  §6.
   Offline/online copy clarified: saved names and restored results open offline; generating names
   always needs the internet (DeepSeek).
 

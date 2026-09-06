@@ -122,9 +122,10 @@ Do not send the full shortlist or hidden surplus candidates on later requests.
 Use the direct DeepSeek Chat Completions endpoint at `https://api.deepseek.com/chat/completions`:
 
 - Model: `deepseek-v4-flash`.
-- Thinking explicitly disabled for generate/refine.
+- Thinking explicitly disabled for generate/refine (spec §6; see the alias deviation below for
+  the one operation that enables it).
 - JSON object output mode.
-- Maximum 800 output tokens.
+- Maximum 800 output tokens (alias requests: 2500, because reasoning consumes budget).
 - No tools or streaming.
 - One upstream request per submitted operation; disable SDK retries if using an SDK.
 
@@ -132,12 +133,18 @@ Keep system instructions stable and send changing inputs as structured user-mess
 
 Use JSON object mode plus application validation for v0.1. No JSON Schema endpoint migration, capability probing, or runtime fallback calls. The 800-token ceiling is headroom, not a guaranteed worst-case multilingual allowance.
 
-**Authorized deviation (2026-09-06, product owner):** an artist-only **Wu-style alias** operation
-(`alias`) exists alongside generate/refine. It is a paid DeepSeek call with **thinking enabled**
-(persona: an invented “Keeper of the Iron Tongue” naming elder; real Wu-Tang Clan member aliases
-are explicitly excluded) and a 1500-token ceiling for reasoning headroom. Its system prompt is a
-second stable server-side constant, never user-supplied. All §6 output-shape, filtering, and
-selection rules apply unchanged; admission, kill switch, and rate limits are identical.
+**Authorized deviations (2026-09-06, product owner):**
+1. Each request payload carries a `task` line naming the active tab (single track / album-EP /
+   artist identity / Wu-style or sad cloud-rap alias), so the model always knows what it produces.
+2. An artist-only **alias** operation exists alongside generate/refine. It is the only operation
+   with provider **thinking enabled** (`reasoning_effort: low`, 2500-token ceiling); a
+   server-trial with thinking enabled on generate/refine was reverted the same day after live
+   fixtures truncated on the ceiling at ~25 s/call (evidence in `creative-results-2026-09-06.md`).
+   The alias operation selects a stable persona from `aliasStyle`: `wu` (an invented “Keeper of
+   the Iron Tongue” naming elder) or `emo` (“Nobody's Darling”, sad cloud-rap A&R); real member
+   aliases and real artists in each scene are explicitly excluded. System prompts are stable
+   server-side constants, never user-supplied. All §6 output-shape, filtering, and selection
+   rules apply unchanged; admission, kill switch, and rate limits are identical.
 
 ### Application response
 

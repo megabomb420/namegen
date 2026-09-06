@@ -21,11 +21,12 @@ export const REQUEST_COUNTS: Record<Operation, { requested: number; display: num
 };
 
 /**
- * Alias operation runs with provider thinking ENABLED (authorized product
- * decision) and gets a larger ceiling because reasoning consumes tokens.
+ * Thinking is ENABLED for every operation (authorized product decision,
+ * 2026-09-06). Reasoning consumes tokens, so the ceiling is raised above the
+ * original 800-token headroom and effort is kept at 'low' to bound spend.
  */
-export const ALIAS_SETTINGS = {
+export const THINKING_SETTINGS = {
   thinking: 'enabled' as const,
   reasoningEffort: 'low' as const,
-  maxTokens: 1500,
+  maxTokens: 2500,
 };

@@ -5,7 +5,7 @@
  * open-sheet state; validated batches/exclusions persist to sessionStorage and
  * the shortlist/preferences to localStorage through injected adapters.
  */
-import type { LengthPref, Mode, NamingRequest } from '../../shared/contracts';
+import type { AliasStyle, LengthPref, Mode, NamingRequest } from '../../shared/contracts';
 import { BRIEF_MAX, LANGUAGE_MAX } from '../../shared/limits';
 import { countCodePoints } from '../../shared/text';
 import type { WireOutcome } from '../browser/api';
@@ -211,14 +211,15 @@ export class AppStore {
     void this.runRequest(snapshot, kind);
   }
 
-  /** Wu-style alias roll: paid DeepSeek call (thinking enabled), artist mode. */
-  generateAlias(): void {
+  /** Alias roll: paid DeepSeek call (thinking enabled), artist mode. */
+  generateAlias(style: AliasStyle = 'wu'): void {
     const s = this.state;
     if (s.requestActive || s.pending !== null) return;
     const brief = s.briefByMode.artist;
     const snapshot: NamingRequest = {
       operation: 'alias',
       mode: 'artist',
+      aliasStyle: style,
       ...(brief.trim() === '' ? {} : { brief: brief.trim() }),
       avoid: [...s.avoidNames],
     };

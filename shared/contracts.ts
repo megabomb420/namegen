@@ -8,6 +8,7 @@
 export type Operation = 'generate' | 'refine' | 'alias';
 export type Mode = 'track' | 'release' | 'artist';
 export type LengthPref = 'auto' | 'short';
+export type AliasStyle = 'wu' | 'emo';
 
 export const OPERATIONS: readonly Operation[] = ['generate', 'refine', 'alias'];
 export const MODES: readonly Mode[] = ['track', 'release', 'artist'];
@@ -33,6 +34,8 @@ export interface NamingRequest {
   instruction?: string;
   /** Recently displayed names the model should avoid, bounded and capped. */
   avoid?: string[];
+  /** Which alias persona to use (alias operation only). Defaults to "wu". */
+  aliasStyle?: AliasStyle;
 }
 
 /** Validated, defaults-applied request used by the naming service. */
@@ -45,6 +48,8 @@ export interface NormalizedRequest {
   seed: string | null;
   instruction: string;
   avoid: string[];
+  /** Present on alias requests only. */
+  aliasStyle?: AliasStyle;
 }
 
 export interface NamingSuccess {

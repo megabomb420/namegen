@@ -909,6 +909,31 @@ input:focus-visible {
   }
 }
 
+.alias-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.alias-section-head h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.alias-section-head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.alias-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
 .alias-card {
   border: 1px dashed var(--line);
   background: var(--surface);

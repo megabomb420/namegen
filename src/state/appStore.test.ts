@@ -417,6 +417,14 @@ describe('Explore (local) and refine', () => {
 });
 
 describe('alias operation', () => {
+  it('submits an emo alias request with aliasStyle emo', async () => {
+    const h = makeHarness({ submitImpl: async () => successNames(['Wilted Crown']) });
+    h.store.setMode('artist');
+    h.store.generateAlias('emo');
+    expect(h.submit.mock.calls[0][0]).toMatchObject({ operation: 'alias', mode: 'artist', aliasStyle: 'emo' });
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+  });
+
   it('submits an artist alias request and shows it as a batch', async () => {
     const h = makeHarness({ submitImpl: async () => successNames(['Iron Raven', 'Sable Oracle']) });
     h.store.setMode('artist');

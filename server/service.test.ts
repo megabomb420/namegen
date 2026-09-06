@@ -66,6 +66,7 @@ describe('runNamingRequest', () => {
     const payload = JSON.parse(body.messages[1].content);
     expect(payload).toMatchObject({
       operation: 'generate',
+      task: 'You are naming a single track.',
       mode: 'track',
       language: 'English',
       length: 'auto',
@@ -93,12 +94,38 @@ describe('runNamingRequest', () => {
     expect(body).toMatchObject({
       thinking: { type: 'enabled' },
       reasoning_effort: 'low',
-      max_tokens: 1500,
+      max_tokens: 2500,
     });
     expect(body.messages[0].content).toContain('Keeper of the Iron Tongue');
     const payload = JSON.parse(body.messages[1].content);
     expect(payload).toMatchObject({ operation: 'alias', mode: 'artist' });
     expect(payload).not.toHaveProperty('language');
+  });
+
+  it('uses the emo cloud-rap persona when aliasStyle is emo', async () => {
+    const fetchImpl = okFetch(['Wilted Crown', 'Soft Static', 'Rain Room', 'Pillow Case', 'Low Orbit', 'Mourning Dew', 'Clouded', 'Last Bus Home']);
+    const result = await runNamingRequest(
+      { operation: 'alias', mode: 'artist', aliasStyle: 'emo', brief: 'sad boy who records at 3am' },
+      requestDeps(fetchImpl as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ ok: true, partial: false });
+    const [, init] = fetchImpl.mock.calls[0];
+    const body = JSON.parse(String(init?.body));
+    expect(body.messages[0].content).toContain('Nobody');
+    expect(body.messages[0].content).toContain('cloud-rap');
+    const payload = JSON.parse(body.messages[1].content);
+    expect(payload.task).toContain('sad, cloud-rap');
+    expect(payload.aliasStyle).toBe('emo');
+  });
+
+  it('rejects an unknown aliasStyle', async () => {
+    const fetchImpl = vi.fn();
+    const result = await runNamingRequest(
+      { operation: 'alias', mode: 'artist', aliasStyle: 'metal' as never },
+      requestDeps(fetchImpl as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('rejects alias requests outside artist mode', async () => {
