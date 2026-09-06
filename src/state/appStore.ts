@@ -73,7 +73,7 @@ export class AppStore {
     this.state = {
       tab: 'create',
       mode: 'track',
-      brief: '',
+      briefByMode: { track: '', release: '', artist: '' },
       language: savedPrefs.language,
       length: savedPrefs.length,
       optionsOpen: false,
@@ -122,7 +122,7 @@ export class AppStore {
   }
 
   setBrief(brief: string): void {
-    this.set({ brief });
+    this.set({ briefByMode: { ...this.state.briefByMode, [this.state.mode]: brief } });
   }
 
   setLanguage(language: string): void {
@@ -176,7 +176,8 @@ export class AppStore {
   generate(): void {
     const s = this.state;
     if (s.pending !== null) return;
-    const briefError = this.guardBrief(s.brief);
+    const brief = s.briefByMode[s.mode];
+    const briefError = this.guardBrief(brief);
     if (briefError !== null) {
       this.set({
         error: { code: 'INVALID_INPUT', message: briefError, retryable: false },
@@ -195,7 +196,7 @@ export class AppStore {
     const snapshot: NamingRequest = {
       operation: 'generate',
       mode: s.mode,
-      brief: s.brief.trim(),
+      brief: brief.trim(),
       language: trimmedLanguage,
       length: s.length,
       avoid: [...s.avoidNames],
@@ -436,7 +437,7 @@ export class AppStore {
       batches: [],
       viewIndex: 0,
       avoidNames: [],
-      brief: '',
+      briefByMode: { track: '', release: '', artist: '' },
       explore: null,
       error: null,
       errorSnapshot: null,

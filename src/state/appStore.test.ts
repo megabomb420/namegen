@@ -141,7 +141,7 @@ describe('generate', () => {
     h.store.generate();
     await vi.waitFor(() => expect(h.store.getState().error).not.toBeNull());
     const s = h.store.getState();
-    expect(s.brief).toBe('my draft');
+    expect(s.briefByMode.track).toBe('my draft');
     expect(s.error).toMatchObject({ code: 'UPSTREAM_ERROR', retryable: true });
     expect(s.errorSnapshot).toMatchObject({ operation: 'generate', brief: 'my draft' });
     expect(s.batches).toHaveLength(0);
@@ -202,7 +202,7 @@ describe('stale and cleared responses', () => {
     await vi.waitFor(() => expect(h.submit).toHaveBeenCalled());
     const s = h.store.getState();
     expect(s.batches).toHaveLength(0);
-    expect(s.brief).toBe('');
+    expect(s.briefByMode.track).toBe('');
     expect(s.error).toBeNull();
   });
 
@@ -416,6 +416,46 @@ describe('Explore (local) and refine', () => {
   });
 });
 
+describe('per-mode brief drafts', () => {
+  it('keeps each mode brief separate and remembers it across switches', () => {
+    const h = makeHarness();
+    h.store.setMode('track');
+    h.store.setBrief('track idea');
+    h.store.setMode('release');
+    expect(h.store.getState().briefByMode.track).toBe('track idea');
+    expect(h.store.getState().briefByMode.release).toBe('');
+    h.store.setBrief('release idea');
+    h.store.setMode('artist');
+    h.store.setBrief('artist idea');
+    h.store.setMode('release');
+    expect(h.store.getState().briefByMode.release).toBe('release idea');
+    h.store.setMode('track');
+    expect(h.store.getState().briefByMode.track).toBe('track idea');
+    expect(h.store.getState().briefByMode.artist).toBe('artist idea');
+  });
+
+  it('generates with the active mode brief snapshot only', async () => {
+    const h = makeHarness();
+    h.store.setMode('release');
+    h.store.setBrief('album mood');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    expect(h.submit.mock.calls[0][0]).toMatchObject({ mode: 'release', brief: 'album mood' });
+    h.store.setMode('track');
+    expect(h.store.getState().briefByMode.track).toBe('');
+  });
+
+  it('clear working session empties every mode draft', async () => {
+    const h = makeHarness();
+    for (const mode of ['track', 'release', 'artist'] as const) {
+      h.store.setMode(mode);
+      h.store.setBrief(`${mode} text`);
+    }
+    h.store.clearWorkingSession();
+    expect(h.store.getState().briefByMode).toEqual({ track: '', release: '', artist: '' });
+  });
+});
+
 describe('shortlist', () => {
   it('saves then unsaves with the normalised same-mode duplicate rule', async () => {
     const h = makeHarness();
@@ -464,7 +504,7 @@ describe('working session controls', () => {
     h.store.clearWorkingSession();
     const s = h.store.getState();
     expect(s.batches).toHaveLength(0);
-    expect(s.brief).toBe('');
+    expect(s.briefByMode.track).toBe('');
     expect(s.avoidNames).toHaveLength(0);
     expect(s.error).toBeNull();
     expect(s.shortlist).toHaveLength(shortlistBefore);
@@ -488,7 +528,7 @@ describe('working session controls', () => {
     expect(s.requestActive).toBe(false);
     expect(s.explore).toBeNull();
     expect(s.error).toBeNull();
-    expect(s.brief).toBe('');
+    expect(s.briefByMode).toEqual({ track: '', release: '', artist: '' });
   });
 
   it('warns when the persisted session could not be removed', async () => {
@@ -500,7 +540,7 @@ describe('working session controls', () => {
     const s = h.store.getState();
     // Memory is cleared regardless…
     expect(s.batches).toHaveLength(0);
-    expect(s.brief).toBe('');
+    expect(s.briefByMode.track).toBe('');
     // …and the user is told the old persisted results may come back.
     expect(s.sessionUnavailable).toBe(true);
     expect(s.toast?.message).toMatch(/couldn't be cleared/i);

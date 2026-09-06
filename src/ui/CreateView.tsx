@@ -1,6 +1,6 @@
 import { countCodePoints } from '../../shared/text';
 import type { AppStore } from '../state/appStore';
-import { findSaved } from '../state/helpers';
+import { activeBrief, findSaved } from '../state/helpers';
 import type { AppState, DisplayBatch } from '../state/types';
 import { NameRow } from './NameRow';
 import { MODE_OPTIONS, LENGTH_OPTIONS, MODE_LABELS } from './labels';
@@ -11,7 +11,8 @@ interface CreateViewProps {
 }
 
 export function CreateView({ state, store }: CreateViewProps) {
-  const briefLength = countCodePoints(state.brief);
+  const brief = activeBrief(state);
+  const briefLength = countCodePoints(brief);
   const briefOver = briefLength > 2000;
   // A request counts as busy from submission to settlement, even when its
   // visible work was invalidated (cleared session, closed sheet).
@@ -46,7 +47,7 @@ export function CreateView({ state, store }: CreateViewProps) {
         <textarea
           id="brief"
           rows={4}
-          value={state.brief}
+          value={brief}
           onChange={(event) => store.setBrief(event.target.value)}
           placeholder="Sound, mood, story, keywords, references or a short lyric — optional."
         />
@@ -109,7 +110,7 @@ export function CreateView({ state, store }: CreateViewProps) {
       </div>
 
       <button type="button" className="primary" disabled={!canSubmit} onClick={() => store.generate()}>
-        {busy ? 'Naming…' : state.brief.trim() === '' ? 'Surprise me' : 'Generate'}
+        {busy ? 'Naming…' : brief.trim() === '' ? 'Surprise me' : 'Generate'}
       </button>
       <p className="privacy-note">
         Context you add and names you saw recently are sent to DeepSeek for naming. The Namegen

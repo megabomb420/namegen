@@ -18,8 +18,8 @@ export function App({ store }: AppProps) {
     <div className="app">
       {!state.online && (
         <p className="offline-banner" role="status">
-          You&apos;re offline. Saved names and restored results still open; naming needs a
-          connection.
+          You&apos;re offline: saved names and restored results stay available, but generating new
+          names needs an internet connection (naming runs on DeepSeek).
         </p>
       )}
       {state.sessionUnavailable && (

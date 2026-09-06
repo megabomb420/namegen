@@ -68,7 +68,10 @@ function UpdateBanner() {
         </>
       ) : (
         <>
-          <span>Ready to work offline.</span>
+          <span>
+            App ready offline — saved names and results open without a connection. Generating
+            new names still needs the internet.
+          </span>
           <button type="button" className="banner-action" onClick={() => pwa.dismissUpdate()}>
             Dismiss
           </button>

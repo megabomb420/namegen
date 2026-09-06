@@ -61,7 +61,12 @@ export interface Toast {
 export interface AppState {
   tab: Tab;
   mode: Mode;
-  brief: string;
+  /**
+   * Per-mode brief drafts, remembered while switching Track/Release/Artist.
+   * Memory only by design (spec §7): never persisted, empty after a reload,
+   * cleared by Clear working session.
+   */
+  briefByMode: Record<Mode, string>;
   language: string;
   length: LengthPref;
   optionsOpen: boolean;

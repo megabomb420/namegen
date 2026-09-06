@@ -58,6 +58,11 @@ export interface DisplayBatchLike {
   displayedAt: number;
 }
 
+/** The brief draft belonging to the currently selected mode. */
+export function activeBrief(state: { mode: Mode; briefByMode: Record<Mode, string> }): string {
+  return state.briefByMode[state.mode];
+}
+
 export function toRefineRequest(input: {
   seed: string;
   mode: Mode;
