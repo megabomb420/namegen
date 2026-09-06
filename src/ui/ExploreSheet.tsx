@@ -21,9 +21,12 @@ export function ExploreSheet({ state, store }: ExploreSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  // Key the effect on the sheet being open, not on the explore state object:
+  // typing in the sheet mutates `explore` and must never steal focus.
+  const open = explore !== null;
 
   useEffect(() => {
-    if (explore === null) return;
+    if (!open) return;
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
 
@@ -51,15 +54,20 @@ export function ExploreSheet({ state, store }: ExploreSheetProps) {
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      previousFocusRef.current?.focus();
+      const previous = previousFocusRef.current;
+      // The element that opened the sheet may have been replaced while the
+      // sheet was open (e.g. a refinement changed the underlying batch list).
+      if (previous !== null && previous.isConnected) previous.focus();
     };
-  }, [explore, store]);
+  }, [open, store]);
 
   if (explore === null) return null;
 
   const instructionOver = countCodePoints(explore.instruction) > INSTRUCTION_MAX;
   const contextOver = explore.brief === null && countCodePoints(explore.contextDraft) > BRIEF_MAX;
-  const busy = state.pending !== null && state.pending.kind === 'refine';
+  // Any in-flight request (including one whose visible work was invalidated)
+  // blocks a new refinement.
+  const busy = state.requestActive;
   const submitLabel = explore.instruction.trim() === '' ? 'More like this' : 'Refine';
   const canSubmit = !busy && !instructionOver && !contextOver;
 

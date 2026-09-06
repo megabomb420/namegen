@@ -681,7 +681,25 @@ input:focus-visible {
   gap: 2px;
 }
 
+.saved-name-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--hit);
+  background: none;
+  border: 0;
+  padding: 2px 2px;
+  text-align: left;
+}
+
+.saved-name-open svg {
+  flex: none;
+  color: var(--faint);
+}
+
 .saved-name {
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 600;
   overflow-wrap: anywhere;
   user-select: text;

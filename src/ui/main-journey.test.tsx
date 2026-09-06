@@ -163,4 +163,51 @@ describe('main journey', () => {
     expect(await screen.findByText('Back Online')).toBeInTheDocument();
     expect(submit).toHaveBeenCalledTimes(2);
   });
+
+  it('typing in Explore keeps focus in the textarea instead of stealing it', async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn(async () => success(['Anchor', 'Buoy']));
+    const store = new AppStore(createDeps(submit));
+    render(<App store={store} />);
+    await user.click(screen.getByRole('button', { name: 'Surprise me' }));
+    await screen.findByText('Anchor');
+
+    const opener = screen.getByRole('button', { name: 'Explore “Anchor” for more like this' });
+    await user.click(opener);
+    const dialog = screen.getByRole('dialog', { name: 'Explore' });
+    expect(dialog).toBeInTheDocument();
+    // Focus starts on the close control.
+    expect(screen.getByRole('button', { name: 'Close explore' })).toHaveFocus();
+
+    const instruction = screen.getByLabelText('What should change?');
+    await user.click(instruction);
+    expect(instruction).toHaveFocus();
+    // Each keystroke mutates the sheet state; focus must stay in the textarea.
+    await user.keyboard('da');
+    expect(screen.getByLabelText('What should change?')).toHaveFocus();
+    expect((instruction as HTMLTextAreaElement).value).toBe('da');
+
+    // Closing returns focus to the element that opened the sheet.
+    await user.click(screen.getByRole('button', { name: 'Close explore' }));
+    expect(screen.getByRole('button', { name: 'Explore “Anchor” for more like this' })).toHaveFocus();
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('saved names open Explore locally with their mode and the missing-brief notice', async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn(async () => success(['Keep This', 'Drop That']));
+    const store = new AppStore(createDeps(submit));
+    render(<App store={store} />);
+    await user.click(screen.getByRole('button', { name: 'Surprise me' }));
+    await screen.findByText('Keep This');
+    await user.click(screen.getByRole('button', { name: 'Save “Keep This” to shortlist' }));
+
+    await user.click(screen.getByRole('button', { name: /Shortlist/ }));
+    await user.click(screen.getByRole('button', { name: 'Explore “Keep This” for more like this' }));
+    const dialog = screen.getByRole('dialog', { name: 'Explore' });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText(/Original brief isn't available/)).toBeInTheDocument();
+    // Local action: no model request for opening the sheet.
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
 });

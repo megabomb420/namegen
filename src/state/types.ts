@@ -70,6 +70,14 @@ export interface AppState {
   viewIndex: number;
   /** Recently displayed names sent as exclusions (bounded, ≤ 24). */
   avoidNames: string[];
+  /**
+   * Transport admission lock: true from submission until the request settles,
+   * independent of `pending`. `pending` is the visible in-flight marker and is
+   * cleared when the user invalidates work (close Explore, clear session);
+   * `requestActive` keeps the single-active-request rule even while an
+   * invalidated request is still in flight.
+   */
+  requestActive: boolean;
   pending: PendingRequest | null;
   /** Generation error + its exact snapshot for retry. */
   error: AppError | null;

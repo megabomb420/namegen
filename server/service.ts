@@ -121,14 +121,15 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
         retryable: true,
       };
     case 'ok': {
-      if (result.finishReason !== null && result.finishReason !== 'stop') {
-        // 'length' and anything else means the response was interrupted; we do
-        // not reconstruct truncated output.
+      // Require exactly `stop`: a missing, null, 'length', 'content_filter'
+      // or any other reason means the response did not complete normally and
+      // must not be treated as output. Never reconstruct it.
+      if (result.finishReason !== 'stop') {
         log?.({ outcome: 'provider-truncated', latencyMs: result.latencyMs, usage: result.usage ?? undefined });
         return {
           ok: false,
           code: 'UNUSABLE_OUTPUT',
-          message: 'The naming response was cut off before it finished. Try again.',
+          message: 'The naming response did not finish normally. Try again.',
           retryable: true,
         };
       }

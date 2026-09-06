@@ -89,6 +89,7 @@ export class AppStore {
       toast: null,
       online: typeof navigator === 'undefined' ? true : navigator.onLine,
       epoch: 0,
+      requestActive: false,
     };
   }
 
@@ -215,10 +216,13 @@ export class AppStore {
   }
 
   private async runRequest(snapshot: NamingRequest, kind: 'generate' | 'refine'): Promise<void> {
-    if (this.state.pending !== null) return;
+    // Transport admission: locked from submission until settlement, so work
+    // invalidated mid-flight (closing Explore, clearing the session) can never
+    // permit a second concurrent paid request.
+    if (this.state.requestActive || this.state.pending !== null) return;
     const epoch = this.state.epoch + 1;
     const pending: PendingRequest = { kind, epoch };
-    const base: Partial<AppState> = { epoch, pending, error: null, errorSnapshot: null };
+    const base: Partial<AppState> = { epoch, requestActive: true, pending, error: null, errorSnapshot: null };
     if (kind === 'generate') {
       this.set(base);
     } else {
@@ -227,26 +231,57 @@ export class AppStore {
       this.set({ ...base, explore: { ...explore, loading: true, error: null } });
     }
 
-    const outcome = await this.deps.submit(snapshot);
+    try {
+      const outcome = await this.deps.submit(snapshot);
 
-    // Late, cleared or superseded work never applies.
-    const stateAfter = this.state;
-    if (stateAfter.epoch !== epoch || stateAfter.pending === null || stateAfter.pending.epoch !== epoch) return;
+      // Late, cleared or superseded work never applies.
+      const stateAfter = this.state;
+      if (stateAfter.epoch !== epoch || stateAfter.pending === null || stateAfter.pending.epoch !== epoch) return;
 
-    if (!outcome.ok) {
-      const error: AppError = { code: outcome.code, message: outcome.message, retryable: outcome.retryable };
-      if (kind === 'generate') {
-        this.set({ pending: null, error, errorSnapshot: snapshot });
-      } else {
-        const explore = this.state.explore;
-        if (explore === null) return;
-        this.set({ pending: null, explore: { ...explore, loading: false, error, retrySnapshot: snapshot } });
+      if (!outcome.ok) {
+        const error: AppError = { code: outcome.code, message: outcome.message, retryable: outcome.retryable };
+        if (kind === 'generate') {
+          this.set({ pending: null, error, errorSnapshot: snapshot });
+        } else {
+          const explore = this.state.explore;
+          if (explore === null) return;
+          this.set({ pending: null, explore: { ...explore, loading: false, error, retrySnapshot: snapshot } });
+        }
+        return;
       }
-      return;
-    }
 
-    if (kind === 'generate') {
-      const batch: DisplayBatch = {
+      if (kind === 'generate') {
+        const batch: DisplayBatch = {
+          id: this.deps.randomId(),
+          names: outcome.names,
+          partial: outcome.partial,
+          mode: snapshot.mode,
+          language: snapshot.language ?? '',
+          length: snapshot.length ?? 'auto',
+          brief: snapshot.brief ?? '',
+          displayedAt: this.deps.now(),
+        };
+        const batches = pushBatch(this.state.batches, batch, SESSION_BATCH_LIMIT);
+        const avoidNames = pushAvoidNames(this.state.avoidNames, outcome.names);
+        const next: Partial<AppState> = {
+          pending: null,
+          error: null,
+          errorSnapshot: null,
+          batches,
+          viewIndex: batches.length - 1,
+          avoidNames,
+        };
+        this.set(next);
+        this.persistCurrentSession();
+        return;
+      }
+
+      // Refinement: keep the alternatives in the open sheet and place the
+      // completed batch in the bounded recovery list so closing the sheet (or
+      // further exploration) never discards it. Raw context is not persisted.
+      const explore = this.state.explore;
+      if (explore === null || explore.seed !== snapshot.seed) return;
+      const refineBatch: DisplayBatch = {
         id: this.deps.randomId(),
         names: outcome.names,
         partial: outcome.partial,
@@ -256,38 +291,32 @@ export class AppStore {
         brief: snapshot.brief ?? '',
         displayedAt: this.deps.now(),
       };
-      const batches = pushBatch(this.state.batches, batch, SESSION_BATCH_LIMIT);
+      const batches = pushBatch(this.state.batches, refineBatch, SESSION_BATCH_LIMIT);
       const avoidNames = pushAvoidNames(this.state.avoidNames, outcome.names);
-      const next: Partial<AppState> = {
+      this.set({
         pending: null,
         error: null,
         errorSnapshot: null,
+        avoidNames,
         batches,
         viewIndex: batches.length - 1,
-        avoidNames,
-      };
-      this.set(next);
+        explore: {
+          ...explore,
+          loading: false,
+          error: null,
+          retrySnapshot: snapshot,
+          alternatives: outcome.names,
+          partial: outcome.partial,
+        },
+      });
       this.persistCurrentSession();
-      return;
+    } finally {
+      const after = this.state;
+      const stillMine = after.pending !== null && after.pending.epoch === epoch;
+      if (after.requestActive || stillMine) {
+        this.set({ requestActive: false, ...(stillMine ? { pending: null } : {}) });
+      }
     }
-
-    // Refinement result lives in the open Explore sheet.
-    const explore = this.state.explore;
-    if (explore === null || explore.seed !== snapshot.seed) return;
-    const avoidNames = pushAvoidNames(this.state.avoidNames, outcome.names);
-    this.set({
-      pending: null,
-      avoidNames,
-      explore: {
-        ...explore,
-        loading: false,
-        error: null,
-        retrySnapshot: snapshot,
-        alternatives: outcome.names,
-        partial: outcome.partial,
-      },
-    });
-    this.persistCurrentSession();
   }
 
   private persistCurrentSession(): void {
@@ -310,6 +339,29 @@ export class AppStore {
       language: batch.language,
       length: batch.length,
       brief: batch.brief,
+      contextDraft: '',
+      instruction: '',
+      loading: false,
+      error: null,
+      retrySnapshot: null,
+      alternatives: [],
+      partial: null,
+    };
+    this.set({ explore });
+  }
+
+  /**
+   * Explore from a saved shortlist name: it keeps its saved mode and uses the
+   * current language/length preferences; no originating brief exists, so the
+   * sheet offers its bounded context field. Entirely local, never a request.
+   */
+  openSavedExplore(name: string, mode: Mode): void {
+    const explore: ExploreState = {
+      seed: name,
+      mode,
+      language: this.state.language,
+      length: this.state.length,
+      brief: null,
       contextDraft: '',
       instruction: '',
       loading: false,
@@ -389,7 +441,19 @@ export class AppStore {
       error: null,
       errorSnapshot: null,
     });
-    this.deps.clearSession();
+    // requestActive intentionally stays set: the transport lock remains held
+    // until the in-flight request settles, even though its work is invalidated.
+    const cleared = this.deps.clearSession();
+    if (!cleared) {
+      // Removal failed; try overwriting with an empty session instead.
+      const overwritten = this.deps.persistSession({ version: 1, batches: [], avoid: [] });
+      if (!overwritten) {
+        this.set({ sessionUnavailable: true });
+        this.showToast(
+          "The saved session couldn't be cleared in this browser — your earlier results may come back after a refresh.",
+        );
+      }
+    }
   }
 
   // ----- shortlist ---------------------------------------------------------

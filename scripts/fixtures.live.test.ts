@@ -5,9 +5,10 @@
  * side-by-side report for repeated-root/template inspection plus token usage
  * for the multilingual headroom check.
  *
- * This test is skipped unless a DeepSeek key is present (env DEEPSEEK_API_KEY
- * or `.dev.vars`). It must never run in CI without a key. Run:
- *   npm run fixtures
+ * This file is excluded from the ordinary `npm test` suite. It runs only when
+ * invoked explicitly (npm run fixtures, which uses vitest.fixtures.config.ts)
+ * and skips itself unless a DeepSeek key is present (env DEEPSEEK_API_KEY or
+ * `.dev.vars`), so a stray invocation never issues paid calls without a key.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -67,6 +68,12 @@ runLive('creative fixtures (live DeepSeek, twice each)', () => {
 
     // Headroom: truncation inside the 800-token ceiling is a red flag.
     expect(truncatedCount, 'truncated response within token ceiling').toBe(0);
+    // Both runs must produce usable names for the evaluation to pass; provider
+    // outages or validation failures must fail loudly, never report as passed.
+    expect(unusable, 'both fixture runs must succeed for a passing evaluation').toBe(0);
+    for (const run of rows) {
+      expect(run.names === null ? run.error : null, 'fixture run produced no usable names').toBeNull();
+    }
 
     const header = `\n[${fixture.id}] ${fixture.label}`;
     const body = [

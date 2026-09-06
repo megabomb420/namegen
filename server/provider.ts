@@ -36,6 +36,8 @@ interface ChatMessage {
 interface ChatBody {
   model: string;
   messages: ChatMessage[];
+  /** Spec §6: thinking explicitly disabled (DeepSeek defaults to enabled). */
+  thinking: { type: 'disabled' };
   response_format: { type: 'json_object' };
   max_tokens: number;
   stream: false;
@@ -99,6 +101,7 @@ export async function callChatCompletions(payload: unknown, deps: ProviderDeps):
       // system prompt is stable across requests.
       { role: 'user', content: JSON.stringify(payload) },
     ],
+    thinking: { type: 'disabled' },
     response_format: { type: 'json_object' },
     max_tokens: PROVIDER.maxOutputTokens,
     stream: false,

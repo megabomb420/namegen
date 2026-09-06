@@ -57,6 +57,7 @@ describe('runNamingRequest', () => {
     const body = JSON.parse(String(init?.body));
     expect(body).toMatchObject({
       model: 'deepseek-v4-flash',
+      thinking: { type: 'disabled' },
       response_format: { type: 'json_object' },
       max_tokens: 800,
       stream: false,
@@ -94,6 +95,30 @@ describe('runNamingRequest', () => {
     const result = await runNamingRequest(validRequest, requestDeps(fetchImpl as unknown as typeof fetch));
     expect(result).toMatchObject({ ok: false, code: 'UNUSABLE_OUTPUT', retryable: true });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('a missing or null finish reason is not treated as completion', async () => {
+    const nullReason = okFetch(['Looks', 'Complete'], { finishReason: null });
+    const nullResult = await runNamingRequest(validRequest, requestDeps(nullReason as unknown as typeof fetch));
+    expect(nullResult).toMatchObject({ ok: false, code: 'UNUSABLE_OUTPUT', retryable: true });
+
+    // Envelope without any finish_reason field at all.
+    const missingReason = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ index: 0, message: { role: 'assistant', content: JSON.stringify({ names: ['X'] }) } }],
+        }),
+        { status: 200 },
+      ),
+    );
+    const missingResult = await runNamingRequest(validRequest, requestDeps(missingReason as unknown as typeof fetch));
+    expect(missingResult).toMatchObject({ ok: false, code: 'UNUSABLE_OUTPUT', retryable: true });
+  });
+
+  it('non-stop finish reasons such as content_filter are rejected', async () => {
+    const fetchImpl = okFetch(['Filtered'], { finishReason: 'content_filter' });
+    const result = await runNamingRequest(validRequest, requestDeps(fetchImpl as unknown as typeof fetch));
+    expect(result).toMatchObject({ ok: false, code: 'UNUSABLE_OUTPUT', retryable: true });
   });
 
   it('maps upstream 429 to RATE_LIMITED and other statuses to UPSTREAM_ERROR', async () => {

@@ -23,15 +23,23 @@ export function normalizeDisplayWhitespace(value: string): string {
   return value.trim().replace(/\s+/gu, ' ');
 }
 
+const ESZETT = '\u00df'; // ß — full case fold target is "ss"
+const FINAL_SIGMA = '\u03c2'; // ς folds to σ under full case folding
+
+/**
+ * Unicode case folding for comparison keys: compatibility normalisation
+ * (NFKD), lowercasing, then the multi-code-point full-fold cases JavaScript's
+ * `toLowerCase` does not cover. Displayed values keep their original spelling
+ * and diacritics; only the key is folded.
+ */
+export function caseFold(value: string): string {
+  return value.normalize('NFKD').toLowerCase().replaceAll(ESZETT, 'ss').replaceAll(FINAL_SIGMA, '\u03c3');
+}
+
 /**
  * Comparison key for duplicates and exclusions: Unicode compatibility
- * normalisation (NFKD), case folding, then whitespace normalisation. Displayed
- * values keep their original spelling and diacritics; only the key is folded.
+ * normalisation (NFKD), case folding, then whitespace normalisation.
  */
 export function nameKey(value: string): string {
-  return value
-    .normalize('NFKD')
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/gu, ' ');
+  return caseFold(value).trim().replace(/\s+/gu, ' ');
 }

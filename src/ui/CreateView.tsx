@@ -13,7 +13,9 @@ interface CreateViewProps {
 export function CreateView({ state, store }: CreateViewProps) {
   const briefLength = countCodePoints(state.brief);
   const briefOver = briefLength > 2000;
-  const busy = state.pending !== null;
+  // A request counts as busy from submission to settlement, even when its
+  // visible work was invalidated (cleared session, closed sheet).
+  const busy = state.requestActive;
   const batch = state.batches[state.viewIndex] ?? null;
   const hasHistory = state.batches.length > 1;
   const canSubmit = !busy && !briefOver;
@@ -110,8 +112,9 @@ export function CreateView({ state, store }: CreateViewProps) {
         {busy ? 'Naming…' : state.brief.trim() === '' ? 'Surprise me' : 'Generate'}
       </button>
       <p className="privacy-note">
-        Context you add and names you saw recently are sent to DeepSeek for naming only. Nothing is
-        stored on a server.
+        Context you add and names you saw recently are sent to DeepSeek for naming. The Namegen
+        service keeps no copy of them — nothing is stored on a Namegen server. DeepSeek&apos;s own
+        retention is outside our control.
       </p>
 
       <div className="live-region" aria-live="polite">

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { AppStore } from '../state/appStore';
 import type { AppState } from '../state/types';
-import { CopyIcon, RemoveIcon } from './icons';
+import { ChevronRightIcon, CopyIcon, RemoveIcon } from './icons';
 import { formatSavedDate, MODE_LABELS } from './labels';
 
 interface ShortlistViewProps {
@@ -69,7 +69,15 @@ export function ShortlistView({ state, store }: ShortlistViewProps) {
           {items.map((item) => (
             <li key={item.id} className="saved-row">
               <div className="saved-main">
-                <span className="saved-name">{item.name}</span>
+                <button
+                  type="button"
+                  className="saved-name-open"
+                  aria-label={`Explore “${item.name}” for more like this`}
+                  onClick={() => store.openSavedExplore(item.name, item.mode)}
+                >
+                  <span className="saved-name">{item.name}</span>
+                  <ChevronRightIcon size={18} />
+                </button>
                 <span className="saved-meta">
                   {MODE_LABELS[item.mode]} · saved {formatSavedDate(item.savedAt)}
                 </span>

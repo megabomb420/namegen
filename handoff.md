@@ -1,10 +1,12 @@
 # Implementation handoff — [HANDOFF]
 
-Updated: 2026-09-06 (implementation complete; live-provider, deployment, and device checks still unverified).
+Updated: 2026-09-06 (implementation complete; review findings fixed; live-provider, deployment, and device checks still unverified).
 
 ## Current state
 
 Standalone v0.1 PWA implemented and committed on `main`: React + TypeScript + Vite frontend, one Cloudflare Worker with Static Assets (`POST /api/generate`), ordinary server-side naming modules, versioned local/session storage, deterministic tests. No ChatGPT/MCP scaffolding. No accounts, no cloud sync, no history browser.
+
+The ten material findings of the external review of `90b7619` are fixed, regression-tested, and recorded in `findings.md` (each with status). This pass changed generation behaviour (explicit `thinking: disabled`; `finish_reason` must be exactly `stop`), so a live creative-fixture rerun is required once a DeepSeek key is available.
 
 Repository layout (each part is one boundary; see *Boundaries* below):
 
@@ -26,10 +28,11 @@ npm run dev:web     # vite dev      → http://localhost:5173 (proxies /api → 
 # Or serve the built app from the Worker alone: npm run build && npm run dev:api
 
 npm run typecheck   # tsc --noEmit over src/server/worker/shared
-npm test            # 105 tests: 93 pass, 12 live-fixture tests skip without a key
+npm test            # 105 tests, all passing (ordinary suite; live fixtures excluded)
 npm run build       # vite build + vite-plugin-pwa (generateSW) → dist/
 npm run icons       # regenerate public/icons/*.png (committed, no deps)
-npm run fixtures    # run the 12 creative fixtures twice against live DeepSeek (skips without a key)
+npm run fixtures    # EXPLICIT opt-in only: runs the 12 creative fixtures twice against live
+                    # DeepSeek via vitest.fixtures.config.ts; skips itself without a key
 
 # Deploy (one Worker; config committed without secrets)
 npm run build
@@ -50,17 +53,21 @@ Local secrets go in `.dev.vars` (template: `.dev.vars.example`, gitignored). Clo
 ## Material decisions
 
 - Client sends only operation/mode/brief/language/length/seed/instruction/avoid (≤24); server derives model, counts (8→6, 6→4), prompt and token settings.
+- DeepSeek is called with thinking explicitly disabled (`thinking: { type: "disabled" }`) and only a `finish_reason` of exactly `stop` is accepted as completion; missing/null/`length`/`content_filter` outputs are unusable (never reconstructed, never auto-retried).
 - Failed/limited outputs never auto-retry at any layer; “Retry” resubmits the exact failed snapshot; editing and resubmitting is a new request.
-- Refinement results live in the open Explore sheet (save/copy/open-further supported); only generate batches become current/previous persisted results. Tapping any displayed name (including a refinement) opens Explore locally.
-- Restored batches keep names/metadata with no originating brief; Explore then shows the notice and offers a bounded context field that is used as the brief for refine.
-- Duplicate detection and exclusions use NFKD + case fold + whitespace fold for keys while preserving displayed diacritics/spelling (shared by server filtering, shortlist dedupe, and avoid-list management).
-- DeepSeek “thinking disabled” is satisfied by using the non-thinking `deepseek-v4-flash` model without a reasoner toggle; per §14, verify the current DeepSeek API shape at integration time before changing anything.
+- Transport admission is a single lock (`requestActive`) held from submission until settlement; closing Explore or clearing the session invalidates the visible work but never permits a second concurrent paid request.
+- Completed refinement batches enter the same bounded (2) current/previous recovery list as generation batches, with originating metadata and names only — raw context/instructions are never persisted. Closing the sheet therefore never discards them.
+- Saved names are explorable locally: they keep their saved mode and use current language/length preferences; Explore shows the missing-brief notice and its bounded context field.
+- Comparison keys use NFKD + Unicode case folding (incl. ß→ss, final sigma→sigma) while displayed values keep their original spelling and diacritics (shared by server filtering, shortlist dedupe, and avoid-list management).
+- The privacy disclosure is scoped to the Namegen service (which stores nothing) and explicitly disclaims control over DeepSeek retention.
 - Generated icons come from a dependency-free script so the repo carries no image assets generator; PNGs are committed and self-checked on write.
 
 ## Checks performed
 
 Automated (all deterministic, mocked, in CI form — `npm test`):
-- 93 passing tests + clean `tsc --noEmit` + production build. Coverage includes: surplus selection & discard; partial batches; zero-valid output; overlength (code-point) and control-character entries; Unicode duplicates; malformed/truncated provider content (finish_reason `length` rejected, never reconstructed); extra-key/overlong-array rejection; avoid+seed exclusion; provider 429/5xx/network/timeout mapping; 24KB body cap (streamed); routing 404/405; content-type 415; kill switch; missing key and missing/broken limiter fail closed; limiter deny → 429 + Retry-After; stale-response and cleared-work races; single active request; retry-snapshot identity; storage corruption/blocking/full; shortlist 300-cap without eviction; the main journey (Generate → Explore → Save → Reload → Copy) and network-failure UI.
+- 105 passing tests + clean `tsc --noEmit` + production build. Coverage includes: surplus selection & discard; partial batches; zero-valid output; overlength (code-point) and control-character entries; Unicode duplicates incl. full case folding; malformed/truncated provider content and missing/null/non-`stop` finish reasons rejected, never reconstructed; extra-key/overlong-array rejection; avoid+seed exclusion; provider 429/5xx/network/timeout mapping; 24KB body cap (streamed); routing 404/405; content-type 415; kill switch; missing key and missing/broken limiter fail closed; limiter deny → 429 + Retry-After; stale-response and cleared-work races; single active request enforced at the transport layer (concurrent attempts refused until settlement); retry-snapshot identity; refinement batches entering the bounded recovery list and persisting without raw context; saved-name local exploration; session-clear failure surfacing; storage corruption/blocking/full; shortlist 300-cap without eviction; the main journey (Generate → Explore → Save → Reload → Copy); network-failure UI; Explore text editing keeping keyboard focus.
+
+External-review regressions (`findings.md`): all ten findings are fixed and covered — outbound body asserts `thinking: { type: "disabled" }` (F1); focus effect keyed on sheet open/close with a UI test typing in the textarea (F2); transport lock held until settlement with concurrent-attempt tests (F3); disclosure copy scoped + DeepSeek retention disclaimed (F4); refine batches persisted into recovery with Previous/Back reachable (F5); saved-name Explore UI + store tests (F6); finish-reason null/missing/content_filter rejection tests (F7); Straße/STRASSE and final-sigma fold tests (F8); clear-session failure toast/notice tests (F9); fixtures moved to an explicit opt-in config that also fails when either run produces no usable names (F10).
 
 Local Worker smoke test (`wrangler dev`, workerd, real localhost HTTP, **no** DeepSeek key):
 - Static SPA served 200; `/api/unknown` JSON 404; non-POST 405 + Allow; `text/plain` 415; malformed JSON 400; valid request with a dummy key performed one real outbound provider attempt and returned the sanitised 502 `UPSTREAM_ERROR` (no raw provider body, no stack). Rate-limit binding simulated fine locally.
@@ -70,13 +77,13 @@ Service-worker inspection (build output):
 
 ## Unverified (no credentials / devices / account access)
 
-- **Live DeepSeek generation** — no `DEEPSEEK_API_KEY` was available in this environment. `npm run fixtures` runs the 12 committed fixtures (all modes; blank context; detailed concrete briefs; reference-as-qualities; a lyric excerpt; Japanese and Arabic input for multilingual token headroom; two refinements incl. Spanish) twice through the real naming-core modules and prints side-by-side runs, exact-duplicate counts and max completion tokens. Run it with a key; a human must then judge the ≥75% plausible-candidate gate, repeated roots/templates across runs, and multilingual truncation headroom at the 800-token ceiling. Until then the §12 quality gate is unverified.
+- **Live DeepSeek generation** — no `DEEPSEEK_API_KEY` was available in this environment, and the review-fix pass changed generation behaviour (thinking disabled, strict `stop` completion), so the creative-fixture rerun this warrants has NOT been performed. `npm run fixtures` runs the 12 committed fixtures (all modes; blank context; detailed concrete briefs; reference-as-qualities; a lyric excerpt; Japanese and Arabic input for multilingual token headroom; two refinements incl. Spanish) twice through the real naming-core modules and prints side-by-side runs, exact-duplicate counts and max completion tokens. It is explicitly opted in (vitest.fixtures.config.ts; excluded from `npm test`) and now fails unless both runs of every fixture produce usable names. Run it with a key; a human must then judge the ≥75% plausible-candidate gate, repeated roots/templates across runs, and multilingual truncation headroom at the 800-token ceiling. Until then the §12 quality gate is unverified.
 - **Cloudflare deployment / kill switch / spending safeguard** — no Cloudflare credentials. The kill switch and limiter are code-verified but not deployed; the provider-enforced spending safeguard (or bounded prepaid funding without auto top-ups) is an external DeepSeek/billing configuration that still must be made before public launch; development calls consume the same DeepSeek funds.
 - **Physical-device PWA behaviour** — Android Chrome and iOS Safari install, offline operation, and interrupted/restarted sessions were not checked on real devices (no devices/emulators here). Service-worker behaviour was verified only by static inspection of the generated worker and the local Worker run, not browser emulation — do not treat this as device evidence.
 
 ## Unresolved issues
 
-- Verify current DeepSeek Chat Completions interface details (model name, JSON-mode constraints, any explicit “thinking disabled” flag) against §14 references before the first live call.
+- DeepSeek interface details re-verified during the review-fix pass against the current API reference: `deepseek-v4-flash` is a valid model, `thinking: { type: "disabled" }` is the documented way to disable thinking (default is enabled), and `finish_reason` is a required string (`stop | length | content_filter | tool_calls | insufficient_system_resource`). Remaining to verify live: JSON-mode interaction and observed multilingual token headroom at the 800-token ceiling.
 - Choose a per-account rate-limit `namespace_id` if the documentation default collides with other Workers under the account.
 - Nothing else known-open: all tracked requirements that can be exercised without external credentials are implemented and tested.
 
