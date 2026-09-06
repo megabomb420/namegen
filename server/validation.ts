@@ -106,6 +106,11 @@ export function normalizeRequest(raw: unknown): RequestValidationResult {
     }
   }
 
+  // The alias operation is artist-only: the persona always names an artist.
+  if (operation === 'alias' && mode !== 'artist') {
+    return fail('Alias requests must use mode "artist".');
+  }
+
   // Avoid list: bounded count, each entry bounded and clean, deduplicated by
   // comparison key. Duplicates never inflate the wire list.
   let avoid: string[] = [];

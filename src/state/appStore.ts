@@ -206,8 +206,23 @@ export class AppStore {
 
   retryFailedRequest(): void {
     const snapshot = this.state.errorSnapshot;
-    if (snapshot === null || this.state.pending !== null) return;
-    void this.runRequest(snapshot, 'generate');
+    if (snapshot === null || this.state.requestActive) return;
+    const kind = snapshot.operation === 'alias' ? 'alias' : snapshot.operation === 'refine' ? 'refine' : 'generate';
+    void this.runRequest(snapshot, kind);
+  }
+
+  /** Wu-style alias roll: paid DeepSeek call (thinking enabled), artist mode. */
+  generateAlias(): void {
+    const s = this.state;
+    if (s.requestActive || s.pending !== null) return;
+    const brief = s.briefByMode.artist;
+    const snapshot: NamingRequest = {
+      operation: 'alias',
+      mode: 'artist',
+      ...(brief.trim() === '' ? {} : { brief: brief.trim() }),
+      avoid: [...s.avoidNames],
+    };
+    void this.runRequest(snapshot, 'alias');
   }
 
   retryExplore(): void {
@@ -216,7 +231,7 @@ export class AppStore {
     void this.runRequest(snapshot, 'refine');
   }
 
-  private async runRequest(snapshot: NamingRequest, kind: 'generate' | 'refine'): Promise<void> {
+  private async runRequest(snapshot: NamingRequest, kind: 'generate' | 'refine' | 'alias'): Promise<void> {
     // Transport admission: locked from submission until settlement, so work
     // invalidated mid-flight (closing Explore, clearing the session) can never
     // permit a second concurrent paid request.
@@ -224,7 +239,7 @@ export class AppStore {
     const epoch = this.state.epoch + 1;
     const pending: PendingRequest = { kind, epoch };
     const base: Partial<AppState> = { epoch, requestActive: true, pending, error: null, errorSnapshot: null };
-    if (kind === 'generate') {
+    if (kind === 'generate' || kind === 'alias') {
       this.set(base);
     } else {
       const explore = this.state.explore;
@@ -251,7 +266,7 @@ export class AppStore {
         return;
       }
 
-      if (kind === 'generate') {
+      if (kind === 'generate' || kind === 'alias') {
         const batch: DisplayBatch = {
           id: this.deps.randomId(),
           names: outcome.names,

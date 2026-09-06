@@ -416,6 +416,21 @@ describe('Explore (local) and refine', () => {
   });
 });
 
+describe('alias operation', () => {
+  it('submits an artist alias request and shows it as a batch', async () => {
+    const h = makeHarness({ submitImpl: async () => successNames(['Iron Raven', 'Sable Oracle']) });
+    h.store.setMode('artist');
+    h.store.setBrief('rhymes about late buses');
+    h.store.generateAlias();
+    expect(h.submit.mock.calls[0][0]).toMatchObject({ operation: 'alias', mode: 'artist' });
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const s = h.store.getState();
+    expect(s.batches).toHaveLength(1);
+    expect(s.batches[0].names).toEqual(['Iron Raven', 'Sable Oracle']);
+    expect(s.batches[0].mode).toBe('artist');
+  });
+});
+
 describe('per-mode brief drafts', () => {
   it('keeps each mode brief separate and remembers it across switches', () => {
     const h = makeHarness();

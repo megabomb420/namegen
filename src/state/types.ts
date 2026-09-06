@@ -33,7 +33,7 @@ export interface AppError {
   retryable: boolean;
 }
 
-export type PendingRequest = { kind: 'generate' | 'refine'; epoch: number };
+export type PendingRequest = { kind: 'generate' | 'refine' | 'alias'; epoch: number };
 
 export interface ExploreState {
   seed: string;

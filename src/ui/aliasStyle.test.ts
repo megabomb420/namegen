@@ -1,32 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALIAS_A, ALIAS_B, rollAlias } from './aliasGenerator';
 import { composeBrief, STYLES, VARIANTS } from './styleBriefs';
-
-describe('Wu-style alias generator', () => {
-  it('rolls a two-word alias and avoids repeats', () => {
-    let current = rollAlias(null);
-    for (let i = 0; i < 60; i++) {
-      const next = rollAlias(current);
-      expect(next).toMatch(/^[A-Za-z]+ [A-Za-z]+$/);
-      expect(next).not.toBe(current);
-      current = next;
-    }
-  });
-
-  it('never produces protected Wu-Tang names', () => {
-    const protectedNames = new Set(
-      ['ghostface killah', 'rza', 'gza', 'method man', 'ol dirty bastard', 'raekwon', 'u-god', 'masta killa'],
-    );
-    for (let i = 0; i < 500; i++) {
-      expect(protectedNames.has(rollAlias(null).toLowerCase())).toBe(false);
-    }
-  });
-
-  it('uses real word lists', () => {
-    expect(ALIAS_A.length).toBeGreaterThanOrEqual(16);
-    expect(ALIAS_B.length).toBeGreaterThanOrEqual(16);
-  });
-});
 
 describe('style + variant brief composer', () => {
   it('composes a bounded, non-empty brief for every combination', () => {

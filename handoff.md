@@ -77,7 +77,10 @@ Local secrets go in `.dev.vars` (template: `.dev.vars.example`, gitignored). Clo
   A **style dropdown** (hip-hop, wave, UK garage, future garage, drum & bass, electronic) plus a
   **variant picker** (dark / instrumental / atmospheric / —) composes a matching brief into the
   field. In Artist mode a **Wu-Tang-style alias roller** generates random two-word stage names
-  locally (no provider call), excluding real Wu-Tang Clan aliases.
+  via the real model: a server-side **alias** operation (artist-only, stable “Keeper of the Iron
+  Tongue” persona prompt, provider thinking ENABLED, 1500-token ceiling) returns six two-word
+  stage-name candidates into the normal results list; real Wu-Tang Clan member aliases are
+  excluded. Authorized deviation recorded in spec §6.
   Offline/online copy clarified: saved names and restored results open offline; generating names
   always needs the internet (DeepSeek).
 

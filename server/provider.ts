@@ -36,11 +36,21 @@ interface ChatMessage {
 interface ChatBody {
   model: string;
   messages: ChatMessage[];
-  /** Spec §6: thinking explicitly disabled (DeepSeek defaults to enabled). */
-  thinking: { type: 'disabled' };
+  /** Per-request: 'disabled' for naming (spec §6), 'enabled' for the alias op. */
+  thinking: { type: 'enabled' | 'disabled' };
   response_format: { type: 'json_object' };
   max_tokens: number;
   stream: false;
+}
+
+export interface ProviderOverrides {
+  /** System prompt override (e.g. the alias persona). Defaults to [RUNTIME]. */
+  systemPrompt?: string;
+  /** Thinking mode. Naming requests default to disabled (spec §6). */
+  thinking?: 'enabled' | 'disabled';
+  /** Token ceiling override (alias runs with thinking and needs headroom). */
+  maxTokens?: number;
+  reasoningEffort?: 'low' | 'high' | 'max';
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -83,7 +93,11 @@ function parseEnvelope(
  * owns counts and the request payload; this module only talks to the provider.
  * The upstream deadline aborts the in-flight fetch.
  */
-export async function callChatCompletions(payload: unknown, deps: ProviderDeps): Promise<ProviderResult> {
+export async function callChatCompletions(
+  payload: unknown,
+  deps: ProviderDeps,
+  overrides: ProviderOverrides = {},
+): Promise<ProviderResult> {
   const {
     fetchImpl,
     apiKey,
@@ -92,18 +106,22 @@ export async function callChatCompletions(payload: unknown, deps: ProviderDeps):
     url = PROVIDER.url,
   } = deps;
   const startedAt = now();
+  const thinkingType = overrides.thinking ?? 'disabled';
 
   const body: ChatBody = {
     model: PROVIDER.model,
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: overrides.systemPrompt ?? SYSTEM_PROMPT },
       // Changing inputs travel as structured JSON in the user message; the
       // system prompt is stable across requests.
       { role: 'user', content: JSON.stringify(payload) },
     ],
-    thinking: { type: 'disabled' },
+    thinking: { type: thinkingType },
+    ...(overrides.reasoningEffort !== undefined && thinkingType === 'enabled'
+      ? { reasoning_effort: overrides.reasoningEffort }
+      : {}),
     response_format: { type: 'json_object' },
-    max_tokens: PROVIDER.maxOutputTokens,
+    max_tokens: overrides.maxTokens ?? PROVIDER.maxOutputTokens,
     stream: false,
   };
 

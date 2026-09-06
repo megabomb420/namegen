@@ -5,7 +5,8 @@
  * dependencies; the public result is the application contract only.
  */
 import type { NamingResult, NormalizedRequest } from '../shared/contracts';
-import { REQUEST_COUNTS } from './config';
+import { REQUEST_COUNTS, ALIAS_SETTINGS } from './config';
+import { ALIAS_SYSTEM } from './alias-prompt';
 import { callChatCompletions, type DeepSeekUsage, type ProviderDeps } from './provider';
 import { normalizeRequest } from './validation';
 import { selectNames, type SelectionStats } from './selection';
@@ -41,13 +42,15 @@ function buildPayload(request: NormalizedRequest): Record<string, unknown> {
     operation: request.operation,
     mode: request.mode,
     brief: request.brief,
-    language: request.language,
-    length: request.length,
     avoid: request.avoid,
   };
   if (request.operation === 'refine' && request.seed !== null) {
     payload.seed = request.seed;
     payload.instruction = request.instruction;
+  }
+  if (request.operation === 'generate' || request.operation === 'refine') {
+    payload.language = request.language;
+    payload.length = request.length;
   }
   return payload;
 }
@@ -77,7 +80,16 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
   const counts = REQUEST_COUNTS[request.operation];
 
   const providerDeps: ProviderDeps = { fetchImpl, apiKey, ...(now !== undefined ? { now } : {}) };
-  const result = await callChatCompletions(buildPayload(request), providerDeps);
+  // The alias operation runs the Wu-style persona with provider thinking
+  // ENABLED (authorized decision); naming keeps thinking disabled per spec §6.
+  const isAlias = request.operation === 'alias';
+  const result = await callChatCompletions(
+    buildPayload(request),
+    providerDeps,
+    isAlias
+      ? { systemPrompt: ALIAS_SYSTEM, thinking: 'enabled', reasoningEffort: ALIAS_SETTINGS.reasoningEffort, maxTokens: ALIAS_SETTINGS.maxTokens }
+      : {},
+  );
 
   switch (result.kind) {
     case 'timeout':

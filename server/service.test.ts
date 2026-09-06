@@ -78,6 +78,39 @@ describe('runNamingRequest', () => {
     }
   });
 
+  it('runs the alias operation with the Wu persona and thinking ENABLED', async () => {
+    const fetchImpl = okFetch(['Iron Raven', 'Sable Oracle', 'Copper Blade', 'Velvet Vandal', 'Ash Pilgrim', 'Cedar Warden', 'Typhoon Nomad', 'Onyx Alchemist']);
+    const result = await runNamingRequest(
+      { operation: 'alias', mode: 'artist', brief: 'someone who rhymes about late buses' },
+      requestDeps(fetchImpl as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ ok: true, partial: false });
+    if (!result.ok) return;
+    expect(result.names).toHaveLength(6);
+
+    const [, init] = fetchImpl.mock.calls[0];
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({
+      thinking: { type: 'enabled' },
+      reasoning_effort: 'low',
+      max_tokens: 1500,
+    });
+    expect(body.messages[0].content).toContain('Keeper of the Iron Tongue');
+    const payload = JSON.parse(body.messages[1].content);
+    expect(payload).toMatchObject({ operation: 'alias', mode: 'artist' });
+    expect(payload).not.toHaveProperty('language');
+  });
+
+  it('rejects alias requests outside artist mode', async () => {
+    const fetchImpl = vi.fn();
+    const result = await runNamingRequest(
+      { operation: 'alias', mode: 'track' },
+      requestDeps(fetchImpl as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('sends seed and instruction as structured data on refine', async () => {
     const fetchImpl = okFetch(['x', 'y', 'z', '1', '2', '3'], { finishReason: 'stop' });
     const result = await runNamingRequest(

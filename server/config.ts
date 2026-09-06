@@ -17,4 +17,15 @@ export const PROVIDER = {
 export const REQUEST_COUNTS: Record<Operation, { requested: number; display: number }> = {
   generate: { requested: 8, display: 6 },
   refine: { requested: 6, display: 4 },
+  alias: { requested: 8, display: 6 },
+};
+
+/**
+ * Alias operation runs with provider thinking ENABLED (authorized product
+ * decision) and gets a larger ceiling because reasoning consumes tokens.
+ */
+export const ALIAS_SETTINGS = {
+  thinking: 'enabled' as const,
+  reasoningEffort: 'low' as const,
+  maxTokens: 1500,
 };

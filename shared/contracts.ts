@@ -5,11 +5,11 @@
  * module may import browser, node, or provider APIs.
  */
 
-export type Operation = 'generate' | 'refine';
+export type Operation = 'generate' | 'refine' | 'alias';
 export type Mode = 'track' | 'release' | 'artist';
 export type LengthPref = 'auto' | 'short';
 
-export const OPERATIONS: readonly Operation[] = ['generate', 'refine'];
+export const OPERATIONS: readonly Operation[] = ['generate', 'refine', 'alias'];
 export const MODES: readonly Mode[] = ['track', 'release', 'artist'];
 export const LENGTH_PREFS: readonly LengthPref[] = ['auto', 'short'];
 
