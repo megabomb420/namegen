@@ -158,7 +158,12 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 - `npm run typecheck` clean, `npm test` **183 tests in 11 files** pass (131 before this change), `npm run build:worker` succeeds.
 - The release journey is covered end to end in jsdom: the album renders as a title plus numbered tracks, replacing one track swaps only that row, the album saves as a single shortlist entry, a reload restores it, and copying emits the title with numbered tracks.
 - No browser or visual pass was done for the new album, track-list and persona UI — only that jsdom journey and the stylesheet by construction. Treat the layout as unverified until it has been seen on a screen.
-- The live provider has never been asked for an album: the `{"title","tracks"}` shape and `replaceTrack` are exercised against mocks only. Verify with one production album call and one replacement call after deploying, and record the observed token usage against the ~67-token eight-name baseline.
+- Verified live on 2026-09-17 after deploying (final Worker version `dab9edbb-2b6d-42c3-a1c4-72a24792b69f`):
+  - a release request returned `{"album":{"title":"The Pit Takes Its Time","tracks":[10 tracks]},"partial":false}` in 1.7 s, and a second one returned `Tide Shed Sessions` with ten tracks in 1.4 s (81 completion tokens for 12 tracks, so the 800-token ceiling is nowhere near);
+  - a track replacement returned `{"names":["Salt Line at the High Water Mark"]}` in 1.1 s (31 completion tokens, `received: 3`);
+  - an Artist roll returned six two-word names in 7.4 s (thinking enabled), e.g. `Sullen Dubplate · Rainy Metronome · Bruised Bassline · Hollow Antenna · Ashen Two-Step · Concrete Lullaby`.
+- **Bug found by that live check, and fixed:** the first replacement call failed with a 502 `UNUSABLE_OUTPUT`. The Worker log showed `selection-shape` with `received: 0` — the model had answered a replacement request with the *album* shape, because the payload carried `mode: "release"` plus an album title and track list while the prompt described the shapes only by request kind. Every request now carries an explicit `responseShape` field (`names` | `album`) that the prompt treats as authoritative, and a shape rejection records how many entries arrived, so such a failure is answerable from the log. Both changes are covered by tests and by the live re-run above; `spec.md` §6 and §13 record them.
+- Still unverified: the paid creative-fixture pass (now 14 fixtures, including an album and a replacement) and any human quality read of album output.
 
 ### Retained historical evidence: 2026-09-06
 

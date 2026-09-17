@@ -209,6 +209,7 @@ describe('runNamingRequest', () => {
       task: 'You are naming an album, EP or project: one title plus its track list.',
       language: 'English',
       length: 'auto',
+      responseShape: 'album',
     });
     expect(payload.brief).toContain('field recordings');
   });
@@ -269,6 +270,7 @@ describe('runNamingRequest', () => {
       tracks: ['Harbor Lights', 'Salt Air'],
       language: 'English',
       length: 'auto',
+      responseShape: 'names',
     });
     for (const forbidden of ['seed', 'instruction', 'aliasStyle']) {
       expect(payload).not.toHaveProperty(forbidden);

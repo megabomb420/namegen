@@ -78,6 +78,16 @@ function exclusionKeys(request: NormalizedRequest): Set<string> {
   return keys;
 }
 
+/**
+ * How many entries arrived, for the rejection log. The count is diagnostic
+ * metadata, never content: a shape failure must be answerable from the logs.
+ */
+function arrayLengthOf(v: unknown, key: string): number {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return 0;
+  const value = (v as Record<string, unknown>)[key];
+  return Array.isArray(value) ? value.length : 0;
+}
+
 function recordIsNamesOnly(v: unknown, requested: number): v is { names: unknown } {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
   const keys = Object.keys(v);
@@ -113,6 +123,7 @@ export function selectNames(input: SelectionInput): SelectionOutcome {
     return { ok: false, reason: 'not-json', stats };
   }
   if (!recordIsNamesOnly(parsed, requested)) {
+    stats.received = arrayLengthOf(parsed, 'names');
     return { ok: false, reason: 'wrong-shape', stats };
   }
   const rawNames = (parsed as { names: unknown[] }).names;
@@ -179,6 +190,7 @@ export function selectAlbum(input: AlbumSelectionInput): AlbumSelectionOutcome {
     return { ok: false, reason: 'not-json', stats };
   }
   if (!recordIsAlbumOnly(parsed, requestedTracks)) {
+    stats.received = arrayLengthOf(parsed, 'tracks');
     return { ok: false, reason: 'wrong-shape', stats };
   }
   const { title: rawTitle, tracks: rawTracks } = parsed as { title: unknown; tracks: unknown[] };

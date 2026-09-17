@@ -83,6 +83,10 @@ function buildPayload(request: NormalizedRequest): Record<string, unknown> {
     payload.albumTitle = request.albumTitle ?? '';
     payload.tracks = request.tracks ?? [];
   }
+  // The shape is never inferred by the model from the mode: an album request is
+  // the only one that returns {"title","tracks"}, and a replacement — which also
+  // carries an album title and tracks — must still answer with {"names":[…]}.
+  payload.responseShape = isAlbumRequest(request) ? 'album' : 'names';
   // The requested language applies to every operation, aliases included.
   // Length guidance does not apply to the two-word alias personas.
   payload.language = request.language;
