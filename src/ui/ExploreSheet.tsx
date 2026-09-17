@@ -29,6 +29,8 @@ export function ExploreSheet({ state, store }: ExploreSheetProps) {
     if (!open) return;
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -54,6 +56,7 @@ export function ExploreSheet({ state, store }: ExploreSheetProps) {
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
       const previous = previousFocusRef.current;
       // The element that opened the sheet may have been replaced while the
       // sheet was open (e.g. a refinement changed the underlying batch list).

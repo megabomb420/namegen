@@ -3,6 +3,10 @@ interface IconProps {
   'aria-hidden'?: boolean | 'true' | 'false';
 }
 
+export function ArrowIcon({ size = 20 }: IconProps) {
+  return <svg {...base(size)}><path d="M4 12h16M13 5l7 7-7 7" /></svg>;
+}
+
 function base(size: number) {
   return {
     width: size,

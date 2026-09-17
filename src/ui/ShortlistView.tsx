@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { AppStore } from '../state/appStore';
 import type { AppState } from '../state/types';
-import { ChevronRightIcon, CopyIcon, RemoveIcon } from './icons';
+import { ChevronRightIcon, CopyIcon, RemoveIcon, StarIcon } from './icons';
 import { formatSavedDate, MODE_LABELS } from './labels';
 
 interface ShortlistViewProps {
@@ -16,6 +16,7 @@ export function ShortlistView({ state, store }: ShortlistViewProps) {
 
   return (
     <section className="view shortlist-view" aria-label="Shortlist">
+      <p className="eyebrow shortlist-kicker">The ones worth keeping</p>
       <div className="shortlist-head">
         <h1>
           Shortlist <span className="count-inline">{items.length}/300</span>
@@ -60,9 +61,11 @@ export function ShortlistView({ state, store }: ShortlistViewProps) {
       )}
 
       {items.length === 0 ? (
-        <div className="empty-hint">
-          <p>Nothing saved yet.</p>
-          <p>Save names you like from Create — they stay on this device.</p>
+        <div className="empty-hint shortlist-empty">
+          <span className="empty-symbol" aria-hidden="true"><StarIcon size={26} /></span>
+          <h2>Nothing saved yet.</h2>
+          <p>Star the names that feel right. Keep them here while you decide.</p>
+          <button className="quiet" onClick={() => store.setTab('create')}>Find a name <ChevronRightIcon size={16} /></button>
         </div>
       ) : (
         <ul className="saved-list">
@@ -106,8 +109,8 @@ export function ShortlistView({ state, store }: ShortlistViewProps) {
       )}
 
       <p className="session-note">
-        Saved names live in this browser or install only and can be lost when its data is cleared.
-        No syncing between browsers or apps.
+        Saved names live in this browser and can be lost when its data is cleared.
+        Copy your shortlist to keep it elsewhere.
       </p>
     </section>
   );

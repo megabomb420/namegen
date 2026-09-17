@@ -39,7 +39,15 @@ export function NameRow({ name, mode, saved, onOpen, onToggleSave, onCopy }: Nam
   }, [menuOpen]);
 
   return (
-    <div className="name-row" ref={rowRef}>
+    <div className="name-row" ref={rowRef} onKeyDown={(event) => {
+      if (event.key === 'Escape' && menuOpen) {
+        event.stopPropagation();
+        closeMenu();
+        triggerRef.current?.focus();
+      }
+    }} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) closeMenu();
+    }}>
       <button
         type="button"
         className="name-open"

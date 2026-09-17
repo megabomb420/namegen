@@ -12,7 +12,7 @@ import {
 } from './browser/storage';
 import { AppStore, type StoreDeps } from './state/appStore';
 import { App } from './ui/App';
-import { usePwaUpdate } from './pwa';
+import { retireServiceWorker } from './retireServiceWorker';
 import './styles.css';
 
 function randomId(): string {
@@ -49,44 +49,15 @@ function onOnlineChange() {
 window.addEventListener('online', onOnlineChange);
 window.addEventListener('offline', onOnlineChange);
 
-function UpdateBanner() {
-  const pwa = usePwaUpdate();
-  if (!pwa.needRefresh && !pwa.offlineReady) return null;
-  return (
-    <div className="update-banner" role="status">
-      {pwa.needRefresh ? (
-        <>
-          <span>
-            A new version is ready. Reloading will discard unsaved brief and refinement text.
-          </span>
-          <button type="button" className="banner-action" onClick={() => pwa.applyUpdate()}>
-            Reload
-          </button>
-          <button type="button" className="banner-action" onClick={() => pwa.dismissUpdate()}>
-            Later
-          </button>
-        </>
-      ) : (
-        <>
-          <span>
-            App ready offline — saved names and results open without a connection. Generating
-            new names still needs the internet.
-          </span>
-          <button type="button" className="banner-action" onClick={() => pwa.dismissUpdate()}>
-            Dismiss
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
 const container = document.getElementById('root');
 if (container !== null) {
   createRoot(container).render(
     <>
-      <UpdateBanner />
+      
       <App store={store} />
     </>,
   );
 }
+
+retireServiceWorker();
+
