@@ -110,6 +110,12 @@ Production secrets are managed through Wrangler, not Git. Local secrets belong i
 
 ### Sites
 
+**Out of scope for NameGen's own releases (owner, 2026-09-17): this copy exists only as a surface
+for other assistants (GPT Sol / Astra).** It is not part of this app's release path, a stale Sites
+build is not a defect, and no release work should block on republishing it. The published build
+predates the album contract, so Release on that host will fail until someone republishes it
+deliberately — that is expected and accepted.
+
 - Existing project: `appgprj_6aac50c2b9a481918ca525abf14e9a29`.
 - Static output: `dist`, as declared in `.openai/hosting.json`.
 - Published version 1: `appgprj_6aac50c2b9a481918ca525abf14e9a29~appgver_8ebdd8eb8b3c8191acc02a40a29fb618`.
