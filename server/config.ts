@@ -6,7 +6,7 @@ import type { Operation } from '../shared/contracts';
 
 export const PROVIDER = {
   url: 'https://api.deepseek.com/chat/completions',
-  model: 'deepseek-v4-flash',
+  model: 'deepseek-flash',
   /** Hard output ceiling. Headroom for multilingual names, not a guarantee. */
   maxOutputTokens: 800,
   /** Upstream deadline; the fetch is aborted when it elapses. */
@@ -21,9 +21,12 @@ export const REQUEST_COUNTS: Record<Operation, { requested: number; display: num
 };
 
 /**
- * Thinking is ENABLED for every operation (authorized product decision,
- * 2026-09-06). Reasoning consumes tokens, so the ceiling is raised above the
- * original 800-token headroom and effort is kept at 'low' to bound spend.
+ * Provider overrides for the `alias` operation only: thinking ENABLED
+ * (authorized product decision, 2026-09-06). Reasoning consumes output tokens,
+ * so the ceiling is raised above the 800-token naming headroom and effort is
+ * kept at 'low' to bound spend. generate/refine ignore this block and run with
+ * thinking disabled (spec §6) — enabling it there truncated on the ceiling at
+ * ~25 s per call and was reverted the same day.
  */
 export const THINKING_SETTINGS = {
   thinking: 'enabled' as const,

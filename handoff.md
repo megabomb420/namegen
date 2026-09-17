@@ -1,6 +1,6 @@
 # Implementation handoff — [HANDOFF]
 
-Updated: 2026-09-17. The frontend redesign is complete and published to Sites, GitHub Pages, and the existing Cloudflare Worker. This document supersedes the earlier PWA deployment instructions. The naming logic was not rewritten.
+Updated: 2026-09-17 (second pass). The frontend redesign is complete and published to Sites, GitHub Pages, and the existing Cloudflare Worker. A later pass the same day moved the provider model id to `deepseek-flash` and synced `spec.md` with the retired-PWA reality. This document supersedes the earlier PWA deployment instructions. The naming logic was not rewritten.
 
 ## Current state and live locations
 
@@ -13,6 +13,14 @@ Updated: 2026-09-17. The frontend redesign is complete and published to Sites, G
 - GitHub Pages deployment succeeded: https://github.com/megabomb420/namegen/actions/runs/35275010870. Its workflow still has the historical display name “Deploy PWA mirror to GitHub Pages”; the output is now a website.
 
 React + TypeScript + Vite remain the frontend stack. Both static hosts call the existing Worker at `POST /api/generate`; the DeepSeek key, provider calls, validation, and admission controls remain server-side. Sites does not host a second naming backend. No accounts, cloud sync, or new product features were added.
+
+## 2026-09-17 second pass: provider model id and specification sync
+
+- `server/config.ts` now sends `model: "deepseek-flash"`. DeepSeek released V4.1 Flash on 2026-09-10 and `deepseek-flash` is the current name for it; `deepseek-v4-flash` is retired and only temporarily routed to V4.1 Flash for compatibility, so the old id worked by accident rather than by intent. `server/service.test.ts` asserts the outbound model string, so the ordinary suite covers the rename.
+- Thinking settings are unchanged and still valid for V4.1 Flash: `thinking: { type: "disabled" }` for generate/refine, and `thinking: { type: "enabled" }` with `reasoning_effort: "low"` for alias (the model family supports low/high/max effort).
+- The stale comment in `server/config.ts` claiming thinking is enabled for every operation was replaced with the actual routing: the `THINKING_SETTINGS` block applies to the alias operation only.
+- `spec.md` was synced with reality: the model name (§5, §6), the authoritative limiter (§9 now states the Durable Object cap of 3 requests per 60 seconds per client IP via `NAMING_LIMIT_PER_MINUTE`, with the Cloudflare binding as an extra edge layer, instead of "10 requests per 60 seconds"), the two-static-host deployment deviation, and §10, which now documents offline behaviour and service-worker retirement rather than requiring a PWA. The PWA-era wording elsewhere in the document (§1, §3, §7, §8, §11, §12) was corrected with it.
+- `creative-results-2026-09-06.md` was deliberately left untouched: it is a dated record of runs performed against the model id current at that time.
 
 ## Redesign scope
 
@@ -102,7 +110,7 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 ## Naming behavior to preserve
 
 - Generate asks for 8 candidates and displays up to 6; refine asks for 6 and displays up to 4; alias asks for 8 and displays up to 6.
-- Generate/refine keep thinking disabled with the configured 800-token ceiling. Alias uses thinking enabled, low effort and a 2,500-token ceiling, with the `wu` or `emo` persona. `server/service.ts` determines this per operation. The comment in `server/config.ts` claiming thinking is enabled for every operation is stale; the actual service routing takes precedence.
+- Generate/refine keep thinking disabled with the configured 800-token ceiling. Alias uses thinking enabled, low effort and a 2,500-token ceiling, with the `wu` or `emo` persona. `server/service.ts` determines this per operation, and `server/config.ts` documents the alias-only scope of `THINKING_SETTINGS`.
 - Only a provider finish reason of exactly `stop` is accepted. Invalid/truncated outputs are not reconstructed or automatically retried.
 - Failed requests retry only on explicit user action, using the failed snapshot. Editing and generating is a new request.
 - One request remains active until settlement, even when visible work is cleared or Explore is closed. Epoch checks prevent stale responses restoring invalidated state.
@@ -125,6 +133,12 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 - Sites native deployment status was `succeeded`; the live Sites interface was not independently exercised end-to-end. Worker publication succeeded and the Sites CORS preflight was checked. GitHub Pages workflow succeeded and its deployed HTML/new bundle were verified.
 - No full live creative-fixture rerun was done for this frontend-only change.
 
+### 2026-09-17 second pass: model id and specification sync
+
+- `npm run typecheck` clean and `npm test` 131 tests in 11 files passed after the model-id change (the outbound model string is asserted in `server/service.test.ts`).
+- No live provider call was made for this pass: this machine has no `.dev.vars` and no DeepSeek key, so the renamed model id is **not** verified against the real API. Run the explicit, paid `npm run fixtures` before or after deploying.
+- The published deployments still serve the build from the redesign pass (Worker version `0bf6232d-acbe-4731-a55c-48fd0c2852c0`). The model-id change reaches production only through `npm run deploy`, plus a rebuild and republish for the Pages and Sites copies.
+
 ### Retained historical evidence: 2026-09-06
 
 - `creative-results-2026-09-06.md` contains the full 12-fixture × 2-run provider pass, including a transient upstream anomaly and its isolated rerun. Human naming-quality approval remains distinct from technical success.
@@ -138,7 +152,7 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 - Physical Android/iOS browser behavior, old installed-PWA migration and offline recovery have not been verified on real devices. PWA installation is no longer a product requirement.
 - The earlier handoff recorded that a DeepSeek key had been pasted into a chat and should be rotated. Rotation was not verified during this redesign; preserve this unresolved operational item without copying the key into documentation.
 - The GitHub workflow emitted Node 20 action-runtime deprecation warnings, but its Node 24 build and deployment succeeded. Modernizing action versions can be a separate maintenance change.
-- `spec.md` still contains historical PWA/frontend assumptions. Use this handoff and current source for the redesigned presentation/deployment behavior; preserve the established naming contracts. Do not silently treat old installation/offline UI requirements as current.
+- `spec.md` was synced on 2026-09-17 with the redesigned reality (§9 limiter, §10 offline/service-worker retirement, no PWA installation requirement). It remains the product specification, not a description of the deployed artifacts: use this handoff for deployment state and the source for current behaviour.
 
 ## Working between sessions
 

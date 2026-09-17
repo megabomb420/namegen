@@ -56,7 +56,7 @@ describe('runNamingRequest', () => {
     expect(url).toBe('https://api.deepseek.com/chat/completions');
     const body = JSON.parse(String(init?.body));
     expect(body).toMatchObject({
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       thinking: { type: 'disabled' },
       response_format: { type: 'json_object' },
       max_tokens: 800,

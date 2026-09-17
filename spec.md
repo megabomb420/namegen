@@ -1,4 +1,4 @@
-# Music Naming PWA — Final v0.1 specification
+# Music Naming Studio — Final v0.1 specification
 
 Status: ready for implementation. Consolidated on 2026-09-06.
 
@@ -14,11 +14,11 @@ Three modes share one interface:
 - **Release**: name an album, EP, or project.
 - **Artist**: suggest an artist or producer identity.
 
-Include generation, refinement, copying, local shortlisting, and PWA installation. No accounts.
+Include generation, refinement, copying, and local shortlisting. No accounts.
 
 Exclude cloud sync, full generation history, Idea Vault, Taste Profile, audio/file uploads, catalogue searches, availability checking, ranked result categories, explanations, confidence scores, and overlapping vibe/style/weirdness controls.
 
-The standalone PWA is the only v0.1 frontend. Future ChatGPT integration is an architectural consideration, not a deliverable.
+The standalone web app is the only v0.1 frontend. Future ChatGPT integration is an architectural consideration, not a deliverable.
 
 ## 2. Main interface and flow
 
@@ -61,7 +61,7 @@ Keep the current and previous successful batches accessible through Previous/Bac
 - Clearing work invalidates pending responses.
 - Network failure, timeout, unusable output, and rate limiting preserve drafts and successful batches.
 - Retry is explicit and submits the failed request snapshot. Editing inputs starts a new request instead.
-- No automatic retries in the browser, Worker, provider SDK, or service worker.
+- No automatic retries in the browser, the Worker, or the provider SDK.
 - Opening the app, restoring state, opening Explore, saving, and copying never generate requests.
 
 Provide clear loading, offline, partial-result, error, and rate-limit states. Partial valid batches remain fully usable.
@@ -76,7 +76,7 @@ Include a quiet **Availability not checked** note. Do not imply names are unique
 
 ## 5. Naming behaviour
 
-DeepSeek V4 Flash is the only runtime naming model.
+DeepSeek Flash is the only runtime naming model.
 
 | Operation | Requested candidates | Maximum displayed |
 | --- | ---: | ---: |
@@ -121,7 +121,7 @@ Do not send the full shortlist or hidden surplus candidates on later requests.
 
 Use the direct DeepSeek Chat Completions endpoint at `https://api.deepseek.com/chat/completions`:
 
-- Model: `deepseek-v4-flash`.
+- Model: `deepseek-flash`.
 - Thinking explicitly disabled for generate/refine (spec §6; see the alias deviation below for
   the one operation that enables it).
 - JSON object output mode.
@@ -179,13 +179,12 @@ Discard unused surplus after selection. Add only displayed names to the bounded 
 | localStorage | Versioned preferences and up to 300 shortlisted names: ID, name, mode, saved timestamp |
 | sessionStorage | Versioned current/previous successful batches, mode/language/length metadata, and up to 24 recently displayed names |
 | Memory only | Raw briefs/lyrics, originating brief snapshots, refinement instructions, open-sheet state, active requests, errors |
-| Service-worker Cache Storage | Application shell and static assets only |
 
-Do not serialize sensitive text indirectly inside saved request objects. Keep browser persistence within the PWA; no backend shortlist endpoint.
+Do not serialize sensitive text indirectly inside saved request objects. Keep browser persistence within the browser; no backend shortlist endpoint and no service-worker cache.
 
 Restore only validated, completed batch data, with no active request and Explore closed. Never replay requests on reload/restoration. Raw text fields start empty after reload.
 
-Missing, corrupt, blocked, or full storage must not crash the app. Continue in memory. If session storage fails, indicate that temporary results may not survive refresh. Do not promise recovery after tab closure, browser termination, or iOS/PWA relaunch.
+Missing, corrupt, blocked, or full storage must not crash the app. Continue in memory. If session storage fails, indicate that temporary results may not survive refresh. Do not promise recovery after tab closure or browser termination.
 
 Generated names may contain material derived from lyrics. Explain that temporary results can remain in the browser session; do not describe them as nonsensitive or securely erased on closure.
 
@@ -193,7 +192,7 @@ Provide **Clear working session** to remove session records, in-memory drafts/re
 
 Shortlist supports Save/Unsave, remove, Copy all, and Clear shortlist. At 300 entries, ask the user to remove entries; never silently evict saved names. Report successful saving only after persistence succeeds. Use the same normalised comparison within each mode to avoid duplicate saved names.
 
-State that saved names live in this browser/install and can be lost when its data is cleared. No browser-to-installed-app or future ChatGPT synchronization is promised. IndexedDB is unnecessary.
+State that saved names live in this browser and can be lost when its data is cleared. Storage is origin-specific, so a shortlist saved on one origin is not visible on another. No cross-origin or future ChatGPT synchronization is promised. IndexedDB is unnecessary.
 
 Before generation, explain concisely that submitted context and recent-name exclusions are sent to DeepSeek. Local-first is not local inference. Make no unverified provider-retention promises.
 
@@ -205,7 +204,7 @@ The Worker request handler owns HTTP parsing, status/header mapping, trusted cli
 
 Naming modules must not depend on React, browser storage, HTTP cookies, or ChatGPT/MCP APIs. Use one repository and one Worker deployment. No separately deployed core, package framework, generic transport layer, or multi-provider abstraction is required.
 
-The existing IP limit applies to PWA HTTP ingress. Do not make browser IP a required user-identity field in the naming contract. A future MCP handler may call the same internal modules and translate their results without making a loopback HTTP request through the PWA route.
+The existing IP limit applies to web HTTP ingress. Do not make browser IP a required user-identity field in the naming contract. A future MCP handler may call the same internal modules and translate their results without making a loopback HTTP request through the web API route.
 
 ## 9. Deployment and abuse controls
 
@@ -216,15 +215,16 @@ Deploy one **Cloudflare Worker with Static Assets**:
 - Same-origin `POST /api/generate`.
 - DeepSeek API key stored as a Worker secret.
 - Wrangler configuration committed without secrets.
-- No separate Pages project, database, KV store, Durable Object, or queue.
+- No separate Pages project, database, KV store, or queue. The single exception is the rate-limit Durable Object recorded in the authorized deviation below.
 
-**Authorized deviation (2026-09-06, product owner):** the frontend is also mirrored as a static
-GitHub Pages build at `https://megabomb420.github.io/namegen/` (API stays same-origin-server on
-the Worker; the Worker grants a narrow CORS allow-list for that one origin — see §11 note), and a
+**Authorized deviations (2026-09-06 and 2026-09-17, product owner):** the same frontend is also
+published on two static hosts — GitHub Pages at `https://megabomb420.github.io/namegen/` and a
+Sites build at `https://namegen-studio.myby.chatgpt.site` — while the naming API stays only on the
+Worker; the Worker grants a narrow CORS allow-list for exactly those origins (see §11 note). A
 single **Durable Object** (`NamingRateLimiter`) enforces the hard per-IP request cap in
 application code, because the Cloudflare rate-limit binding is not enforced on the account's free
 plan. This is the only DO; it holds no application data. The runtime prompt (§13) includes one
-persona/anti-injection sentence added on the same date.
+persona/anti-injection sentence added on 2026-09-06.
 
 Route `/api/*` explicitly to the Worker before SPA asset fallback. Unknown API paths return JSON 404; unsupported methods return 405. API paths must never return the application HTML by accident.
 
@@ -232,8 +232,8 @@ The Worker must:
 
 - Accept JSON only and enforce a 24KB request-body limit while reading.
 - Validate fields before contacting DeepSeek.
-- Apply a Cloudflare rate-limit binding before the paid request.
-- Start with a configurable limit of 10 requests per 60 seconds per client IP, using Cloudflare's trusted IP information rather than a caller-supplied identity header.
+- Apply the Durable Object rate limit before the paid request; the Cloudflare rate-limit binding stays as an extra edge layer that starts enforcing if the account is upgraded.
+- Enforce 3 requests per 60 seconds per client IP, configurable through the `NAMING_LIMIT_PER_MINUTE` variable, using Cloudflare's trusted IP information rather than a caller-supplied identity header.
 - Return 429 with retry guidance when limited.
 - Fail closed with service-unavailable when the limiter or required configuration is unavailable.
 - Enforce a 20-second upstream deadline and abort the fetch on timeout.
@@ -246,21 +246,24 @@ Before public launch configure a verified provider-enforced spending safeguard, 
 
 Application logs may contain status, latency, token usage, and filtering counts. Exclude raw IPs, briefs, lyrics, names, secrets, request/response bodies, and stack traces containing sensitive content.
 
-## 10. PWA and offline operation
+## 10. Offline behaviour and service-worker retirement
 
-Provide a manifest, appropriate icons, HTTPS deployment, and a service worker caching the application shell and static assets.
+Serve the app over HTTPS. The 2026-09-17 redesign retired the PWA (authorized deviation, product owner): the manifest, the generated service worker, install/update banners, and the offline page-loading promise were removed, and the retained PNG icons and favicon are now design assets rather than an install surface.
 
-After a successful online visit, offline use supports opening the app, viewing available restored results and shortlist entries, saving an available result, copying/removing names, editing an in-memory draft, and opening Explore.
+A client installed before the retirement may still hold the former service worker. `public/sw.js` is now a retirement worker that activates, deletes the matching scoped caches, unregisters, and claims clients without forcing a reload; `src/retireServiceWorker.ts` unregisters only registrations whose script URL is this site's former `sw.js`. Neither migration touches `localStorage` or `sessionStorage`. Do not delete the retirement worker while old clients may still update from the PWA.
 
-Generation/refinement require connectivity. No background request queue. Exclude `/api/*` from service-worker caching and navigation fallback. Handle actual network failures even when the browser reports being online.
+What still holds:
 
-Do not force reload during active work. If an update needs reload, warn that unsaved brief/refinement text will be lost. Do not persist sensitive text solely to facilitate updates.
+- Loading a page requires a connection. A page that is already open can still show restored results and shortlist entries when the network drops.
+- Generation and refinement always require connectivity. No background request queue, no request replay.
+- Exclude `/api/*` from any caching layer. Handle actual network failures even when the browser reports being online.
+- Do not force reload during active work. If an update needs reload, warn that unsaved brief/refinement text will be lost. Do not persist sensitive text solely to facilitate updates.
 
 ## 11. Future ChatGPT boundary — not v0.1 scope
 
 Keep the application contract clean so a later MCP adapter can reuse the naming service. Do not build MCP dependencies, an `/mcp` route, plugin packaging, embedded UI, OAuth, server-side shortlists, cross-client synchronization, or broad CORS permissions now.
 
-A future integration must recheck the current official stack and resolve its own authentication, request identity, abuse controls, privacy disclosures, and shortlist lifetime. ChatGPT widget state is not equivalent to the PWA's local persistence. Do not infer an authenticated person from an IP, conversation ID, or caller-supplied user ID.
+A future integration must recheck the current official stack and resolve its own authentication, request identity, abuse controls, privacy disclosures, and shortlist lifetime. ChatGPT widget state is not equivalent to the browser's local persistence. Do not infer an authenticated person from an IP, conversation ID, or caller-supplied user ID.
 
 DeepSeek remains the only paid application inference dependency. Do not integrate Astra or Grok APIs. The ChatGPT host's own model is outside the naming service's control.
 
@@ -274,7 +277,7 @@ DeepSeek remains the only paid application inference dependency. Do not integrat
 - Deterministic tests cover surplus selection, partial batches, zero-valid output, overlength entries, Unicode duplicates, malformed/truncated output, storage failures, timeouts, rate limits, and stale responses.
 - Backend tests exercise naming modules without a browser and HTTP/admission behaviour separately. Do not implement a fake second frontend to demonstrate portability.
 - API routing, secret isolation, limiter failure, kill switch, and spending setup are verified.
-- Browser and installed experiences are checked on Android Chrome and iOS Safari, including offline operation and interrupted/restarted sessions.
+- Browser experiences are checked on Android Chrome and iOS Safari, including interrupted and restarted sessions. Installed-app checks no longer apply (the PWA was retired).
 - Production build and type checks pass; focused tests cover the API boundary, persistence, and main journey.
 - Run 12 fixed creative fixtures twice, covering all modes, blank context, explicit cliché requests, multilingual input, lyric excerpts, and refinement. Inspect repeated roots/templates across runs.
 - For generation fixtures, a human finds a plausible shortlist candidate in at least 75% of first displayed batches. Refinements preserve a recognisable relationship and follow the instruction. This is a provisional quality gate, not proof of demand.
