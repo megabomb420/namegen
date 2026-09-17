@@ -1,50 +1,50 @@
 /**
- * Random brief ideas for the dice button next to the brief field. The pool
- * mixes concrete sensory prompts with genre-targeted briefs (hip-hop, wave,
- * UK garage, future garage, drum & bass, electronic), some with a dark /
- * atmospheric / instrumental slant — so a single dice roll feels as useful as
- * the old style dropdowns, without any extra UI.
+ * Random brief ideas for the dice button next to the brief field. Every entry
+ * is written the way a producer would type a brief: a short list of concrete
+ * fragments, a direction and a place, and no joke to land at the end. The pool
+ * mixes musical directions with scenes, because a rolled brief has to be usable
+ * as it stands.
  */
 
-/**
- * Genre-flavoured briefs (formerly the style dropdown options). No genre label
- * in the text — the description carries the flavour. Every entry ends with a
- * light, unexpected twist so a rolled brief never reads generic.
- */
-const GENRE_BRIEFS: readonly string[] = [
-  'Boom-bap drums over a dusty sample flip, someone rhyming about the corner store, bass that moves air in the room — and the hook is an old answering-machine message from 1998.',
-  'Slow, weightless synth chords and sparse 808s in half-time, a voice treated like it is underwater, wide empty space between the notes — plus one stubborn field recording of someone unlocking a bike.',
-  'A 2-step shuffle with swingy off-beat bass and chopped stabs, rooftop-party energy under a light rain — the melody is carried by a dripping tap.',
-  'Half-time garage with widescreen pads, sub-bass throbs and a rinsed vocal chop echoing over the drop — the vocal is a grandmother humming through a desk fan.',
-  'A breakbeat chopped into new shapes at 174, rolling bassline and amen variations, rain-slick streets at speed — the break itself comes from a dishwasher cycle.',
-  'Modular bleeps over a sturdy kick, west-coast acid lines, an arrangement that keeps breathing and shifting — until a cheap Casio preset sneaks in and steals the drop.',
+/** Musical directions: genre, texture and energy, without genre-label prefixes. */
+const DIRECTION_BRIEFS: readonly string[] = [
+  'late-night UK garage, rain on the windscreen, cold hands, driving home alone',
+  'boom-bap with dusty drums and a chopped soul sample, someone telling a story about their street',
+  'weightless half-time, wide pads and sparse 808s, a voice sunk under water',
+  '2-step shuffle, off-beat bass and chopped vocal stabs, a rooftop after the rain',
+  'drum & bass at 174, rolling breaks, wet streets at speed, headlights',
+  'future garage, shuffled drums and deep sub-bass, a vocal cut into pieces like a memory',
+  'slow techno built from field recordings, a foghorn for a bassline, everything half-speed',
+  'dub techno, tape hiss, chords that never quite resolve',
+  'lo-fi house, cheap keys, a bassline that waits its turn',
+  'acid line over a sturdy kick, hardware only, no hook until the fourth minute',
+  'sad cloud-rap, a guitar loop, 808s soft enough to sleep on',
+  'broken beat, jazz chords, a bassline arguing with the drums',
+  'shoegaze guitars under a garage beat, huge and gentle at once',
+  'Afrobeat swing, live percussion, a chorus built for a crowded room',
+  'ambient techno for an empty escalator, one chord, a slow filter',
+  'boom-bap tempo with hand-played drums, no sample, upright bass',
+  'something for the walk home at 3am, warm and a little sad',
+  'wide and unhurried, like a place you left a long time ago',
 ];
 
-/** Concrete sensory ideas that work in any genre. */
-const CONCRETE_IDEAS: readonly string[] = [
-  'Rain on a tin roof at 4am, a Wurlitzer organ through one speaker, faint hiss between verses.',
-  'A bicycle wheel clicking against a bent spoke, recorded in a parking garage, slowed to a lurching half-time.',
-  'A choir warming up in a school gym, a distant marching-band bass drum, the smell of floor wax.',
-  'Frying oil, a late-night diner radio talking over itself, the short-order bell as the only melody.',
-  'Wind across an empty stadium, seat numbers rattling, a lone trumpet trying scales in the tunnel.',
-  'A sunrise watering ritual: kettle clicks, two cats arguing in another room.',
-  'A ferry horn answered by a car alarm on shore; everything played at walking speed.',
-  'A church organ rehearsing scales alone after a wedding, dust motes in the light, one broken key.',
-  'Cash register and coin sorter as percussion, a bossa nova played on a toy xylophone.',
-  'Fog over a parking lot, footsteps on wet asphalt, the distant hum of a 24-hour laundromat.',
-  'Typewriter keys, the page-up lever, a desk fan clicking; arrange like a library after closing.',
-  'A broken pinball machine, tilt light stuck on, ball bearings rolling under the cabinet.',
-  'The last train on a subway platform: gusts, turnstile clatter, a busker packing up mid-song.',
-  'Sprinklers at dusk, a screen door slamming, a neighbor practicing scales on a trombone.',
-  'Gravel driveway, an idling delivery van, two dogs barking in agreement, then silence.',
-  'A karaoke bar at closing: one person singing alone over the backing track, off-key and sincere.',
-  'Rainwater gurgling down a drainpipe into a barrel, a wind chime made of spoons, slow waltz time.',
-  'A pottery wheel stopping mid-spin, wet clay slaps, the radio through the studio wall.',
-  'Harbor ropes creaking against cleats, gulls negotiating over a dropped sandwich, low tide smell.',
-  'A grandfather clock and a digital alarm competing in different rooms; resolve them kindly.',
+/** Places and moments: a scene to write a record about. */
+const SCENE_BRIEFS: readonly string[] = [
+  'a flooded quarry town, the last shift at the lime works, a radio left on in the changing rooms',
+  'the last bus home, cracked phone screen, cold hands, a city gone quiet',
+  'a seaside town out of season, closed arcades, a pier at dusk',
+  'a night shift at a 24-hour garage, humming fridge, traffic on the bypass',
+  'moving out of a flat, empty rooms, keys on the counter',
+  'the drive back after a funeral, headlights, one radio station fading out',
+  'first snow in a city that panics, quiet streets, wet boots, a kettle',
+  'a holiday romance that ended at the airport, fluorescent light, announcements',
+  'the swimming pool in winter, empty lanes, chlorine, footsteps echoing',
+  'a Sunday market packing up, crates stacked, a van door sliding shut',
+  'the laundrette at midnight, one machine still running, a magazine from 2009',
+  'a power cut in summer, windows open, a radio playing two streets away',
 ];
 
-export const RANDOM_BRIEFS: readonly string[] = [...CONCRETE_IDEAS, ...GENRE_BRIEFS];
+export const RANDOM_BRIEFS: readonly string[] = [...DIRECTION_BRIEFS, ...SCENE_BRIEFS];
 
 /** Picks a random idea, never the same one twice in a row when avoidable. */
 export function pickRandomBrief(previous: string | null = null, rand: () => number = Math.random): string {
