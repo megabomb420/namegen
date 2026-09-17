@@ -136,8 +136,9 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 ### 2026-09-17 second pass: model id and specification sync
 
 - `npm run typecheck` clean and `npm test` 131 tests in 11 files passed after the model-id change (the outbound model string is asserted in `server/service.test.ts`).
-- No live provider call was made for this pass: this machine has no `.dev.vars` and no DeepSeek key, so the renamed model id is **not** verified against the real API. Run the explicit, paid `npm run fixtures` before or after deploying.
-- The published deployments still serve the build from the redesign pass (Worker version `0bf6232d-acbe-4731-a55c-48fd0c2852c0`). The model-id change reaches production only through `npm run deploy`, plus a rebuild and republish for the Pages and Sites copies.
+- Model id verified live on 2026-09-17 after deploying: one `POST /api/generate` to production returned HTTP 200 with six names in 1.24 s (`Last Bus, Cold Hands | Screen Crack Shuffle | Two Fare Stops | Hands Like Ice | Bus Shelter Bass | Cracked Glass Glow`), so `deepseek-flash` is accepted by the real provider. This is a single smoke call, not a creative-quality pass: the paid 12-fixture rerun is still outstanding.
+- Deployed Worker version `cdcec77d-1bde-446b-80b3-6e2fdaac476d`; GitHub Pages workflow run 35280310430 succeeded for the same commit. No `.dev.vars` and no DeepSeek key exist on this machine, so no local provider call was possible.
+- The model id lives only in `server/config.ts` on the Worker. The Pages and Sites copies are static frontends that call the same Worker and carry no provider settings, so they need no rebuild for this change.
 
 ### Retained historical evidence: 2026-09-06
 
