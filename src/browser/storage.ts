@@ -11,17 +11,19 @@
  * Records written before albums existed carry no `kind`; they are read as
  * names, so the album migration is additive and loses no stored data.
  */
-import type { AliasStyle, LengthPref, Mode } from '../../shared/contracts';
+import type { LengthPref, Mode } from '../../shared/contracts';
 import { AVOID_MAX, NAME_MAX, TRACKS_MAX } from '../../shared/limits';
 import { countCodePoints, hasControlCharacter } from '../../shared/text';
 import type { SavedEntry } from '../state/types';
 
+/**
+ * Preferences. Records written before artist action cards carried an
+ * `aliasStyle` field alongside these; it is ignored on read, so they still load.
+ */
 export interface StoredPrefs {
   version: 1;
   language: string;
   length: LengthPref;
-  /** Artist alias persona. Older records have none and load as "wu". */
-  aliasStyle?: AliasStyle;
 }
 
 export interface StoredNamesBatch {
@@ -99,10 +101,6 @@ function validLength(v: unknown): v is LengthPref {
   return v === 'auto' || v === 'short';
 }
 
-function validAliasStyle(v: unknown): v is AliasStyle {
-  return v === 'wu' || v === 'emo';
-}
-
 function validName(v: unknown): v is string {
   if (typeof v !== 'string') return false;
   if (countCodePoints(v) === 0 || countCodePoints(v) > NAME_MAX) return false;
@@ -137,11 +135,13 @@ export function loadPrefs(): StoredPrefs | null {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return null;
-    const { version, language, length, aliasStyle } = parsed as Record<string, unknown>;
+    const { version, language, length } = parsed as Record<string, unknown>;
     if (version !== 1 || typeof language !== 'string' || language === '' || !validLength(length)) {
       return null;
     }
-    return { version: 1, language, length, aliasStyle: validAliasStyle(aliasStyle) ? aliasStyle : 'wu' };
+    // Any other field on the record (an older `aliasStyle`) is ignored, not a
+    // reason to discard the preferences.
+    return { version: 1, language, length };
   } catch {
     return null;
   }

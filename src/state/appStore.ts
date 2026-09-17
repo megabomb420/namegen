@@ -37,7 +37,7 @@ export interface StoreDeps {
   later: (fn: () => void, ms: number) => unknown;
 }
 
-const DEFAULT_PREFS = { language: 'English', length: 'auto' as LengthPref, aliasStyle: 'wu' as AliasStyle };
+const DEFAULT_PREFS = { language: 'English', length: 'auto' as LengthPref };
 
 /** A replacement target plus the exact snapshot to resubmit if it fails. */
 interface ReplacementRetry {
@@ -129,7 +129,6 @@ export class AppStore {
       briefByMode: { track: '', release: '', artist: '' },
       language: savedPrefs.language,
       length: savedPrefs.length,
-      aliasStyle: savedPrefs.aliasStyle ?? 'wu',
       optionsOpen: false,
       batches,
       viewIndex: Math.max(0, batches.length - 1),
@@ -184,20 +183,14 @@ export class AppStore {
     const trimmed = language.trim();
     const persistable = trimmed !== '' && countCodePoints(trimmed) <= LANGUAGE_MAX;
     if (persistable) {
-      this.persistPrefs({ language: trimmed, length: this.state.length, aliasStyle: this.state.aliasStyle });
+      this.persistPrefs({ language: trimmed, length: this.state.length });
     }
     this.set({ language });
   }
 
   setLength(length: LengthPref): void {
-    this.persistPrefs({ language: this.state.language, length, aliasStyle: this.state.aliasStyle });
+    this.persistPrefs({ language: this.state.language, length });
     this.set({ length });
-  }
-
-  /** Alias persona for artist mode; remembered across visits. */
-  setAliasStyle(style: AliasStyle): void {
-    this.persistPrefs({ language: this.state.language, length: this.state.length, aliasStyle: style });
-    this.set({ aliasStyle: style });
   }
 
   private persistPrefs(prefs: Omit<StoredPrefs, 'version'>): boolean {
@@ -243,6 +236,10 @@ export class AppStore {
     const s = this.state;
     if (s.pending !== null) return;
     const brief = s.briefByMode[s.mode];
+    const trimmedBrief = brief.trim();
+    // The brief card reads the brief; with nothing written the main artist
+    // action does nothing at all and the cards below explain why.
+    if (s.mode === 'artist' && trimmedBrief === '') return;
     const briefError = this.guardBrief(brief);
     if (briefError !== null) {
       this.set({
@@ -259,22 +256,22 @@ export class AppStore {
       });
       return;
     }
-    // Artist mode always rolls the selected alias persona; release mode asks
-    // for one album instead of a flat list.
+    // Artist mode rolls the brief persona — the same action as the first card;
+    // release mode asks for one album instead of a flat list.
     const snapshot: NamingRequest =
       s.mode === 'artist'
         ? {
             operation: 'alias',
             mode: 'artist',
-            aliasStyle: s.aliasStyle,
-            brief: brief.trim(),
+            aliasStyle: 'brief',
+            brief: trimmedBrief,
             language: trimmedLanguage,
             avoid: [...s.avoidNames],
           }
         : {
             operation: 'generate',
             mode: s.mode,
-            brief: brief.trim(),
+            brief: trimmedBrief,
             language: trimmedLanguage,
             length: s.length,
             avoid: [...s.avoidNames],
@@ -289,17 +286,22 @@ export class AppStore {
     void this.runRequest(snapshot, kind);
   }
 
-  /** Alias roll: paid DeepSeek call (thinking enabled), artist mode. */
+  /**
+   * Alias roll from one of the artist cards: paid DeepSeek call (thinking
+   * enabled), artist mode. Every style carries the brief, but only the brief
+   * persona needs one — with the field empty it never leaves the client.
+   */
   generateAlias(style: AliasStyle = 'wu'): void {
     const s = this.state;
     if (s.requestActive || s.pending !== null) return;
-    const brief = s.briefByMode.artist;
+    const brief = s.briefByMode.artist.trim();
+    if (style === 'brief' && brief === '') return;
     const language = s.language.trim();
     const snapshot: NamingRequest = {
       operation: 'alias',
       mode: 'artist',
       aliasStyle: style,
-      ...(brief.trim() === '' ? {} : { brief: brief.trim() }),
+      brief,
       ...(language === '' ? {} : { language }),
       avoid: [...s.avoidNames],
     };
@@ -348,7 +350,14 @@ export class AppStore {
     // permit a second concurrent paid request.
     if (this.state.requestActive || this.state.pending !== null) return;
     const epoch = this.state.epoch + 1;
-    const pending: PendingRequest = { kind, epoch, ...(target ?? {}) };
+    // The persona travels with the snapshot, so the card that was clicked —
+    // or retried — is the one that shows the busy state.
+    const pending: PendingRequest = {
+      kind,
+      epoch,
+      ...(snapshot.aliasStyle === undefined ? {} : { aliasStyle: snapshot.aliasStyle }),
+      ...(target ?? {}),
+    };
     const base: Partial<AppState> = { epoch, requestActive: true, pending, error: null, errorSnapshot: null };
     if (kind === 'refine') {
       const explore = this.state.explore;

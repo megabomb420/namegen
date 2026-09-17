@@ -20,15 +20,26 @@ beforeEach(() => {
 
 describe('preferences', () => {
   it('round-trips valid versioned preferences', () => {
-    expect(persistPrefs({ version: 1, language: 'Japanese', length: 'short', aliasStyle: 'emo' })).toBe(true);
-    expect(loadPrefs()).toEqual({ version: 1, language: 'Japanese', length: 'short', aliasStyle: 'emo' });
+    expect(persistPrefs({ version: 1, language: 'Japanese', length: 'short' })).toBe(true);
+    expect(loadPrefs()).toEqual({ version: 1, language: 'Japanese', length: 'short' });
   });
 
-  it('defaults an absent or unknown alias persona to wu', () => {
-    window.localStorage.setItem(PREFS_KEY, JSON.stringify({ version: 1, language: 'English', length: 'auto' }));
-    expect(loadPrefs()).toMatchObject({ aliasStyle: 'wu' });
-    window.localStorage.setItem(PREFS_KEY, JSON.stringify({ version: 1, language: 'English', length: 'auto', aliasStyle: 'grunge' }));
-    expect(loadPrefs()).toMatchObject({ aliasStyle: 'wu' });
+  it('writes no alias persona field', () => {
+    persistPrefs({ version: 1, language: 'English', length: 'auto' });
+    expect(window.localStorage.getItem(PREFS_KEY)).toBe('{"version":1,"language":"English","length":"auto"}');
+  });
+
+  it('ignores an alias persona left behind by an older build', () => {
+    window.localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({ version: 1, language: 'English', length: 'auto', aliasStyle: 'emo' }),
+    );
+    expect(loadPrefs()).toEqual({ version: 1, language: 'English', length: 'auto' });
+    window.localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({ version: 1, language: 'Japanese', length: 'short', aliasStyle: 'grunge' }),
+    );
+    expect(loadPrefs()).toEqual({ version: 1, language: 'Japanese', length: 'short' });
   });
 
   it('returns null for missing, corrupt or wrong-version data', () => {

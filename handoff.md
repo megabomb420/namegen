@@ -34,6 +34,12 @@ Product decisions taken by the owner, then implemented:
 - **Storage stayed additive:** keys and `version: 1` are unchanged and stored items without a `kind` are read as plain names, so an existing shortlist and session survive the change.
 - **Bug fixed on the way:** `generateAlias` never sent `language`, so an alias batch carried `language: ""` and `validStoredBatch` then rejected the **whole** session on reload. Alias now sends `language` (and both personas were told to follow it), and the batch keeps it.
 
+## 2026-09-17 fourth pass: alter-ego cards and a brief-driven alias
+
+- The Artist section is now **three action cards** instead of a persona selector: **From your brief** — the model reads what you wrote and works the style out from it (`aliasStyle: "brief"`, which requires a non-empty brief) — plus **Keeper of the Iron Tongue** (`wu`) and **Nobody's Darling** (`emo`), the latter two needing no brief. Clicking a card rolls immediately, and the main Artist button does what the first card does.
+- A third stable, server-side persona prompt (`ALIAS_SYSTEM_BRIEF`) joins the other two: no house style of its own, the names have to fit the brief, everything else (JSON shape, eight candidates, no real artists, 60-character limit, language) is unchanged. Validation rejects `aliasStyle: "brief"` without a brief, and the client never sends it: the card and the main button are disabled with a short explanation.
+- The persona *selection* state is gone (`AppState.aliasStyle`, `setAliasStyle`, `StoredPrefs.aliasStyle`) because each card names its own style. Stored prefs that still contain the old field keep loading; written prefs no longer carry it.
+
 ## Redesign scope
 
 - Dark music-editorial presentation: warm ivory type, orange accents, locally hosted Manrope variable font, a spacious desktop layout, and responsive mobile layouts.
@@ -128,7 +134,7 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 ## Naming behavior to preserve
 
 - Generate asks for 8 candidates and displays up to 6; refine asks for 6 and displays up to 4; alias asks for 8 and displays up to 6; a Release generate asks for one album title plus 12 track titles and displays the title with up to 10 tracks; replaceTrack asks for 3 and uses 1.
-- Every naming request — generate, refine, album and replaceTrack — keeps thinking disabled with the configured 800-token ceiling. Alias uses thinking enabled, low effort and a 2,500-token ceiling, with the `wu` or `emo` persona. `server/service.ts` determines this per operation, and `server/config.ts` documents the alias-only scope of `THINKING_SETTINGS`.
+- Every naming request — generate, refine, album and replaceTrack — keeps thinking disabled with the configured 800-token ceiling. Alias uses thinking enabled, low effort and a 2,500-token ceiling, with one of three stable personas: `wu`, `emo`, or `brief`, which reads the brief and works the style out from it. `server/service.ts` determines this per operation, and `server/config.ts` documents the alias-only scope of `THINKING_SETTINGS`.
 - Only a provider finish reason of exactly `stop` is accepted. Invalid/truncated outputs are not reconstructed or automatically retried.
 - Failed requests retry only on explicit user action, using the failed snapshot. Editing and generating is a new request.
 - One request remains active until settlement, even when visible work is cleared or Explore is closed. Epoch checks prevent stale responses restoring invalidated state.

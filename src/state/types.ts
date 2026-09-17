@@ -64,6 +64,8 @@ export interface AppError {
 export type PendingRequest = {
   kind: 'generate' | 'refine' | 'alias' | 'replaceTrack';
   epoch: number;
+  /** Alias persona an alias request was rolled with, so its card can show busy. */
+  aliasStyle?: AliasStyle;
   /** Album batch a replaceTrack request belongs to. */
   batchId?: string;
   /** Track slot a replaceTrack request targets. */
@@ -119,8 +121,6 @@ export interface AppState {
   briefByMode: Record<Mode, string>;
   language: string;
   length: LengthPref;
-  /** Selected artist alias persona; artist mode never sends a generate request. */
-  aliasStyle: AliasStyle;
   optionsOpen: boolean;
   batches: DisplayBatch[];
   /** Index into `batches` of the batch shown on the Create screen. */

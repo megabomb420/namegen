@@ -692,40 +692,26 @@ describe('Explore (local) and refine', () => {
 });
 
 describe('alias operation', () => {
-  it('submits an emo alias request with aliasStyle emo', async () => {
-    const h = makeHarness({ submitImpl: async () => successNames(['Wilted Crown']) });
+  it('submits a wu alias request with aliasStyle wu', async () => {
+    const h = makeHarness({ submitImpl: async () => successNames(['Iron Raven']) });
     h.store.setMode('artist');
-    h.store.generateAlias('emo');
-    expect(h.submit.mock.calls[0][0]).toMatchObject({ operation: 'alias', mode: 'artist', aliasStyle: 'emo' });
+    h.store.generateAlias('wu');
+    expect(h.submit.mock.calls[0][0]).toEqual({
+      operation: 'alias',
+      mode: 'artist',
+      aliasStyle: 'wu',
+      brief: '',
+      language: 'English',
+      avoid: [],
+    });
     await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
   });
 
-  it('submits an artist alias request and shows it as a batch', async () => {
-    const h = makeHarness({ submitImpl: async () => successNames(['Iron Raven', 'Sable Oracle']) });
-    h.store.setMode('artist');
-    h.store.setBrief('rhymes about late buses');
-    h.store.generateAlias();
-    expect(h.submit.mock.calls[0][0]).toMatchObject({ operation: 'alias', mode: 'artist' });
-    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
-    const s = h.store.getState();
-    expect(s.batches).toHaveLength(1);
-    expect(batchNames(s.batches[0])).toEqual(['Iron Raven', 'Sable Oracle']);
-    expect(s.batches[0].mode).toBe('artist');
-  });
-
-  it('routes the main generate action to the selected alias persona', async () => {
+  it('submits an emo alias request with aliasStyle emo and the brief', async () => {
     const h = makeHarness({ submitImpl: async () => successNames(['Wilted Crown']) });
     h.store.setMode('artist');
     h.store.setBrief('late buses');
-    h.store.setAliasStyle('emo');
-    expect(h.prefsWrites).toContainEqual({
-      version: 1,
-      language: 'English',
-      length: 'auto',
-      aliasStyle: 'emo',
-    });
-    h.store.generate();
-    // Artist mode never sends a generate operation, and never a length hint.
+    h.store.generateAlias('emo');
     expect(h.submit.mock.calls[0][0]).toEqual({
       operation: 'alias',
       mode: 'artist',
@@ -738,6 +724,85 @@ describe('alias operation', () => {
     expect(h.store.getState().batches[0]).toMatchObject({ kind: 'names', mode: 'artist' });
   });
 
+  it('submits the brief persona with the brief and shows it as a batch', async () => {
+    const h = makeHarness({ submitImpl: async () => successNames(['Iron Raven', 'Sable Oracle']) });
+    h.store.setMode('artist');
+    h.store.setBrief('rhymes about late buses');
+    h.store.generateAlias('brief');
+    expect(h.submit.mock.calls[0][0]).toMatchObject({
+      operation: 'alias',
+      mode: 'artist',
+      aliasStyle: 'brief',
+      brief: 'rhymes about late buses',
+    });
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const s = h.store.getState();
+    expect(s.batches).toHaveLength(1);
+    expect(batchNames(s.batches[0])).toEqual(['Iron Raven', 'Sable Oracle']);
+    expect(s.batches[0].mode).toBe('artist');
+  });
+
+  it('never sends the brief persona with an empty brief', () => {
+    const h = makeHarness();
+    h.store.setMode('artist');
+    h.store.generateAlias('brief');
+    expect(h.submit).not.toHaveBeenCalled();
+    const s = h.store.getState();
+    expect(s.pending).toBeNull();
+    expect(s.error).toBeNull();
+  });
+
+  it('routes the main artist action to the brief persona', async () => {
+    const h = makeHarness({ submitImpl: async () => successNames(['Sable Oracle']) });
+    h.store.setMode('artist');
+    h.store.setBrief('late buses');
+    h.store.generate();
+    // Artist mode never sends a generate operation, and never a length hint.
+    expect(h.submit.mock.calls[0][0]).toEqual({
+      operation: 'alias',
+      mode: 'artist',
+      aliasStyle: 'brief',
+      brief: 'late buses',
+      language: 'English',
+      avoid: [],
+    });
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    expect(h.store.getState().batches[0]).toMatchObject({ kind: 'names', mode: 'artist' });
+  });
+
+  it('does nothing at all when the artist brief is empty', () => {
+    const h = makeHarness();
+    h.store.setMode('artist');
+    h.store.generate();
+    expect(h.submit).not.toHaveBeenCalled();
+    const s = h.store.getState();
+    expect(s.error).toBeNull();
+    expect(s.errorSnapshot).toBeNull();
+    expect(s.pending).toBeNull();
+    expect(s.requestActive).toBe(false);
+  });
+
+  it('marks the pending request with the persona that was clicked', async () => {
+    const d = deferred<WireOutcome>();
+    const h = makeHarness({ submitImpl: () => d.promise });
+    h.store.setMode('artist');
+    h.store.generateAlias('emo');
+    expect(h.store.getState().pending).toMatchObject({ kind: 'alias', aliasStyle: 'emo' });
+    d.resolve(successNames(['Wilted Crown']));
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+  });
+
+  it('writes preferences without the removed persona field', () => {
+    const h = makeHarness();
+    h.store.setLanguage('Japanese');
+    h.store.setLength('short');
+    expect(h.prefsWrites).toEqual([
+      { version: 1, language: 'Japanese', length: 'auto' },
+      { version: 1, language: 'Japanese', length: 'short' },
+    ]);
+    expect(h.store.getState()).not.toHaveProperty('aliasStyle');
+  });
+
   it('keeps an alias batch through a session round-trip', async () => {
     vi.stubGlobal('window', { sessionStorage: memoryStorage() });
     const h = makeHarness({
@@ -746,7 +811,8 @@ describe('alias operation', () => {
     });
     h.store.setLanguage('Japanese');
     h.store.setMode('artist');
-    h.store.generate();
+    h.store.setBrief('late buses');
+    h.store.generateAlias('brief');
     await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
     expect(h.submit.mock.calls[0][0]).toMatchObject({ operation: 'alias', mode: 'artist', language: 'Japanese' });
 

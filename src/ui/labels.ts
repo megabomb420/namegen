@@ -17,33 +17,40 @@ export const LENGTH_OPTIONS: { value: 'auto' | 'short'; label: string }[] = [
   { value: 'short', label: 'Short' },
 ];
 
-export interface AliasStyleOption {
+export interface AliasCard {
   value: AliasStyle;
-  label: string;
+  title: string;
   blurb: string;
-  /** Label of the main generate button while this persona is selected. */
+  /** Label of the card's own roll button. */
   action: string;
 }
 
-export const ALIAS_STYLE_OPTIONS: AliasStyleOption[] = [
+/** Main artist action label; the brief card does exactly the same thing. */
+export const ARTIST_BRIEF_ACTION = 'Roll from your brief';
+
+/** Shown on the brief card while the brief field is empty. */
+export const EMPTY_BRIEF_NOTE = 'Type something in the brief first.';
+
+export const ALIAS_CARDS: AliasCard[] = [
+  {
+    value: 'brief',
+    title: 'From your brief',
+    blurb: 'Reads what you wrote and works the style out from it.',
+    action: 'Roll from my brief',
+  },
   {
     value: 'wu',
-    label: 'Keeper of the Iron Tongue',
+    title: 'Keeper of the Iron Tongue',
     blurb: 'Wu-Tang style — gritty, memorable two-word stage names.',
     action: 'Have the Keeper name you',
   },
   {
     value: 'emo',
-    label: "Nobody's Darling",
+    title: "Nobody's Darling",
     blurb: 'Emo / cloud-rap — soft, melancholic two-word names.',
     action: 'Summon a sad name',
   },
 ];
-
-export function aliasActionLabel(style: AliasStyle): string {
-  const option = ALIAS_STYLE_OPTIONS.find((candidate) => candidate.value === style);
-  return option === undefined ? ALIAS_STYLE_OPTIONS[0].action : option.action;
-}
 
 /** Header meta for an album batch; names batches keep the ideas count. */
 export function albumMeta(trackCount: number): string {

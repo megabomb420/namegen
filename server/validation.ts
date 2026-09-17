@@ -5,7 +5,7 @@
  * server decides.
  */
 import type { AliasStyle, LengthPref, Mode, NormalizedRequest, Operation } from '../shared/contracts';
-import { LENGTH_PREFS, MODES, OPERATIONS } from '../shared/contracts';
+import { ALIAS_STYLES, LENGTH_PREFS, MODES, OPERATIONS } from '../shared/contracts';
 import {
   AVOID_MAX,
   BRIEF_MAX,
@@ -130,12 +130,17 @@ export function normalizeRequest(raw: unknown): RequestValidationResult {
   let aliasStyle: AliasStyle | undefined;
   if (raw.aliasStyle !== undefined) {
     if (operation !== 'alias') return fail('Alias style is only allowed for alias requests.');
-    if (raw.aliasStyle !== 'wu' && raw.aliasStyle !== 'emo') {
-      return fail('Alias style must be "wu" or "emo".');
+    if (!ALIAS_STYLES.includes(raw.aliasStyle as AliasStyle)) {
+      return fail('Alias style must be "wu", "emo" or "brief".');
     }
-    aliasStyle = raw.aliasStyle;
+    aliasStyle = raw.aliasStyle as AliasStyle;
   } else if (operation === 'alias') {
     aliasStyle = 'wu';
+  }
+
+  // The brief style reads the brief; without one there is nothing to work from.
+  if (aliasStyle === 'brief' && brief === '') {
+    return fail('Brief-style alias requests need a brief.');
   }
 
   // replaceTrack is release-only and carries the album a new track must fit:

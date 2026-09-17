@@ -8,12 +8,17 @@
 export type Operation = 'generate' | 'refine' | 'alias' | 'replaceTrack';
 export type Mode = 'track' | 'release' | 'artist';
 export type LengthPref = 'auto' | 'short';
-export type AliasStyle = 'wu' | 'emo';
+/**
+ * Alias flavour. `wu` and `emo` are stable personas that need no brief; `brief`
+ * reads the supplied brief and works the style out from it, so it requires a
+ * non-empty brief.
+ */
+export type AliasStyle = 'wu' | 'emo' | 'brief';
 
 export const OPERATIONS: readonly Operation[] = ['generate', 'refine', 'alias', 'replaceTrack'];
 export const MODES: readonly Mode[] = ['track', 'release', 'artist'];
 export const LENGTH_PREFS: readonly LengthPref[] = ['auto', 'short'];
-export const ALIAS_STYLES: readonly AliasStyle[] = ['wu', 'emo'];
+export const ALIAS_STYLES: readonly AliasStyle[] = ['wu', 'emo', 'brief'];
 
 /**
  * The single canonical application request. The client supplies only these

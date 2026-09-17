@@ -275,4 +275,69 @@ describe('main journey', () => {
     expect(copied[copied.length - 1]).toBe('Rain On The Windscreen\n1. Wipers On Low\n2. Neon Porch\n3. Static Bloom');
     expect(submit).toHaveBeenCalledTimes(2);
   });
+
+  it('artist mode: the main roll reads the brief and each card rolls its own persona', async () => {
+    const user = userEvent.setup();
+    const gates: ((outcome: WireOutcome) => void)[] = [];
+    const submit = vi.fn((_request: unknown) => new Promise<WireOutcome>((resolve) => gates.push(resolve)));
+    const store = new AppStore(createDeps(submit));
+    render(<App store={store} />);
+
+    await user.click(screen.getByRole('button', { name: 'Artist' }));
+    const cards = screen.getByRole('group', { name: 'Find your alter ego' });
+    const mainRoll = screen.getByRole('button', { name: 'Roll from your brief' });
+
+    // Each card carries its own title, blurb and action.
+    for (const [title, blurb] of [
+      ['From your brief', 'Reads what you wrote and works the style out from it.'],
+      ['Keeper of the Iron Tongue', 'Wu-Tang style — gritty, memorable two-word stage names.'],
+      ["Nobody's Darling", 'Emo / cloud-rap — soft, melancholic two-word names.'],
+    ] as const) {
+      expect(within(cards).getByRole('heading', { name: title })).toBeInTheDocument();
+      expect(within(cards).getByText(blurb)).toBeInTheDocument();
+    }
+
+    // Empty brief: the main roll is disabled and the brief card explains itself.
+    expect(mainRoll).toBeDisabled();
+    expect(within(cards).getByRole('button', { name: 'Roll from my brief' })).toBeDisabled();
+    expect(within(cards).getByText('Type something in the brief first.')).toBeInTheDocument();
+    expect(submit).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText('Brief'), 'late buses, wet asphalt');
+    expect(mainRoll).toBeEnabled();
+    expect(within(cards).getByRole('button', { name: 'Roll from my brief' })).toBeEnabled();
+    expect(within(cards).queryByText('Type something in the brief first.')).not.toBeInTheDocument();
+
+    // The main artist action is the brief card: the brief, worked out for you.
+    await user.click(mainRoll);
+    expect(submit.mock.calls[0][0]).toMatchObject({
+      operation: 'alias',
+      mode: 'artist',
+      aliasStyle: 'brief',
+      brief: 'late buses, wet asphalt',
+    });
+    // The clicked card owns the busy state; every other action waits.
+    expect(within(cards).getByRole('button', { name: 'Thinking…' })).toBeInTheDocument();
+    expect(mainRoll).toBeDisabled();
+    expect(within(cards).getByRole('button', { name: 'Have the Keeper name you' })).toBeDisabled();
+
+    await act(async () => {
+      gates[0](success(['Iron Raven']));
+    });
+    expect(await screen.findByText('Iron Raven')).toBeInTheDocument();
+
+    await user.click(within(cards).getByRole('button', { name: 'Have the Keeper name you' }));
+    expect(submit.mock.calls[1][0]).toMatchObject({ operation: 'alias', mode: 'artist', aliasStyle: 'wu' });
+    await act(async () => {
+      gates[1](success(['Sable Oracle']));
+    });
+    expect(await screen.findByText('Sable Oracle')).toBeInTheDocument();
+
+    await user.click(within(cards).getByRole('button', { name: 'Summon a sad name' }));
+    expect(submit.mock.calls[2][0]).toMatchObject({ operation: 'alias', mode: 'artist', aliasStyle: 'emo' });
+    await act(async () => {
+      gates[2](success(['Wilted Crown']));
+    });
+    expect(await screen.findByText('Wilted Crown')).toBeInTheDocument();
+  });
 });

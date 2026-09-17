@@ -7,7 +7,7 @@
 import type { NamingResult, NormalizedRequest } from '../shared/contracts';
 import { ALBUM_TRACKS } from '../shared/limits';
 import { isAlbumRequest, REQUEST_COUNTS, THINKING_SETTINGS } from './config';
-import { ALIAS_SYSTEM, ALIAS_SYSTEM_EMO } from './alias-prompt';
+import { ALIAS_SYSTEM, ALIAS_SYSTEM_BRIEF, ALIAS_SYSTEM_EMO } from './alias-prompt';
 import { callChatCompletions, type DeepSeekUsage, type ProviderDeps } from './provider';
 import { normalizeRequest } from './validation';
 import { selectAlbum, selectNames, type SelectionStats } from './selection';
@@ -43,6 +43,9 @@ export interface NamingServiceDeps {
  * track replacement). */
 function taskLabel(request: NormalizedRequest): string {
   if (request.operation === 'alias') {
+    if (request.aliasStyle === 'brief') {
+      return 'You are naming an artist from the brief they wrote about their own music.';
+    }
     return request.aliasStyle === 'emo'
       ? 'You are handing out a sad, cloud-rap style artist alias.'
       : 'You are handing out a Wu-Tang-style artist alias.';
@@ -126,7 +129,12 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
   // on the token ceiling and took ~25s per call. The alias operation runs with
   // thinking ENABLED and picks its persona from aliasStyle (wu | emo).
   const isAlias = request.operation === 'alias';
-  const aliasSystem = request.aliasStyle === 'emo' ? ALIAS_SYSTEM_EMO : ALIAS_SYSTEM;
+  const aliasSystem =
+    request.aliasStyle === 'emo'
+      ? ALIAS_SYSTEM_EMO
+      : request.aliasStyle === 'brief'
+        ? ALIAS_SYSTEM_BRIEF
+        : ALIAS_SYSTEM;
   const result = await callChatCompletions(buildPayload(request), providerDeps, isAlias
     ? {
         systemPrompt: aliasSystem,

@@ -216,4 +216,25 @@ describe('normalizeRequest', () => {
       message: 'Alias style is only allowed for alias requests.',
     });
   });
+
+  it('requires a brief for the brief-style alias and accepts all three styles', () => {
+    expect(normalizeRequest({ operation: 'alias', mode: 'artist', aliasStyle: 'brief' })).toMatchObject({
+      ok: false,
+      message: 'Brief-style alias requests need a brief.',
+    });
+    expect(
+      normalizeRequest({ operation: 'alias', mode: 'artist', aliasStyle: 'brief', brief: '   ' }),
+    ).toMatchObject({ ok: false, message: 'Brief-style alias requests need a brief.' });
+    expect(
+      normalizeRequest({ operation: 'alias', mode: 'artist', aliasStyle: 'brief', brief: 'melancholy UK garage' }),
+    ).toMatchObject({ ok: true, value: { aliasStyle: 'brief', brief: 'melancholy UK garage' } });
+    // An absent style still defaults to the Wu persona, brief or no brief.
+    expect(normalizeRequest({ operation: 'alias', mode: 'artist', brief: 'x' })).toMatchObject({
+      ok: true,
+      value: { aliasStyle: 'wu' },
+    });
+    expect(
+      normalizeRequest({ operation: 'alias', mode: 'artist', aliasStyle: 'metal', brief: 'x' }),
+    ).toMatchObject({ ok: false, message: 'Alias style must be "wu", "emo" or "brief".' });
+  });
 });

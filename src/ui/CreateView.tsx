@@ -5,12 +5,13 @@ import type { AlbumBatch, AppState, DisplayBatch } from '../state/types';
 import { NameRow } from './NameRow';
 import {
   ALBUM_TITLE_KICKER,
-  ALIAS_STYLE_OPTIONS,
+  ALIAS_CARDS,
+  ARTIST_BRIEF_ACTION,
+  EMPTY_BRIEF_NOTE,
   MODE_OPTIONS,
   LENGTH_OPTIONS,
   MODE_LABELS,
   albumMeta,
-  aliasActionLabel,
 } from './labels';
 import { pickRandomBrief } from './randomBriefs';
 import { ShuffleIcon, ArrowIcon, StarFilledIcon, StarIcon } from './icons';
@@ -27,11 +28,13 @@ export function CreateView({ state, store }: CreateViewProps) {
   const brief = activeBrief(state);
   const briefLength = countCodePoints(brief);
   const briefOver = briefLength > 2000;
+  const briefEmpty = brief.trim() === '';
   const busy = state.requestActive;
   const batch = state.batches[state.viewIndex] ?? null;
   const hasHistory = state.batches.length > 1;
-  const canSubmit = !busy && !briefOver;
-  const aliasBusy = state.requestActive && state.pending?.kind === 'alias';
+  // The main artist action reads the brief, so an empty one leaves it disabled.
+  const canSubmit = !busy && !briefOver && !(state.mode === 'artist' && briefEmpty);
+  const aliasBusy = busy && state.pending?.kind === 'alias';
   const meta = batch === null
     ? 'A blank slate. For now.'
     : batch.kind === 'album'
@@ -40,8 +43,13 @@ export function CreateView({ state, store }: CreateViewProps) {
   const generateLabel = busy
     ? (aliasBusy ? 'Thinking…' : 'Naming…')
     : state.mode === 'artist'
-      ? aliasActionLabel(state.aliasStyle)
-      : brief.trim() === '' ? 'Surprise me' : 'Generate';
+      ? ARTIST_BRIEF_ACTION
+      : briefEmpty ? 'Surprise me' : 'Generate';
+  const formNote = briefEmpty
+    ? state.mode === 'artist'
+      ? 'Write a brief here, or roll one of the cards below.'
+      : 'Leave the brief open. See where it takes you.'
+    : 'Follow the feeling. You can refine the names next.';
 
   return (
     <section className="view create-view" aria-label="Create names">
@@ -94,29 +102,35 @@ export function CreateView({ state, store }: CreateViewProps) {
           <button type="button" className={`primary generate-button${busy ? ' is-busy' : ''}`} disabled={!canSubmit} onClick={() => store.generate()}>
             <span>{generateLabel}</span><ArrowIcon size={23} />
           </button>
-          <p className="form-note">{brief.trim() === '' ? 'Leave the brief open. See where it takes you.' : 'Follow the feeling. You can refine the names next.'}</p>
+          <p className="form-note">{formNote}</p>
         </div>
       </div>
       {state.mode === 'artist' && <section className="alias-tools" aria-labelledby="alias-heading">
-        <div className="alias-section-head"><p className="eyebrow">Another way in</p><h2 id="alias-heading">Find your alter ego.</h2><p>Pick a persona, then roll it for an original artist alias.</p></div>
-        <div className="persona-picker">
-          <div className="persona-group" role="group" aria-label="Alias style">
-            {ALIAS_STYLE_OPTIONS.map((option) => <button key={option.value} type="button"
-              className={`persona-segment${state.aliasStyle === option.value ? ' persona-segment-on' : ''}`}
-              aria-pressed={state.aliasStyle === option.value} aria-label={option.label}
-              onClick={() => store.setAliasStyle(option.value)}>
-              <span className="persona-name">{option.label}</span>
-              <span className="persona-blurb">{option.blurb}</span>
-            </button>)}
+        <div className="alias-section-head"><p className="eyebrow">Another way in</p><h2 id="alias-heading">Find your alter ego.</h2><p>Every card rolls straight away — pick the flavour you want for an original artist alias.</p></div>
+        <div className="alias-cards-block">
+          <div className="alias-cards" role="group" aria-label="Find your alter ego">
+            {ALIAS_CARDS.map((card) => {
+              const needsBrief = card.value === 'brief' && briefEmpty;
+              const cardBusy = aliasBusy && state.pending?.aliasStyle === card.value;
+              return <article key={card.value} className="alias-card">
+                <h3 className="alias-card-title">{card.title}</h3>
+                <p className="alias-card-blurb">{card.blurb}</p>
+                {needsBrief && <p className="alias-card-note">{EMPTY_BRIEF_NOTE}</p>}
+                <button type="button" className={`alias-card-action${cardBusy ? ' is-busy' : ''}`}
+                  disabled={busy || needsBrief} onClick={() => store.generateAlias(card.value)}>
+                  {cardBusy ? 'Thinking…' : card.action}
+                </button>
+              </article>;
+            })}
           </div>
-          <p className="micro-note">Artist names always come from the alias roll — the button above rolls the selected persona.</p>
+          <p className="micro-note">Artist names always come from an alias roll — the cards roll their own flavour; the button above rolls from your brief.</p>
         </div>
       </section>}
       <section className="results-section" aria-label="Naming results" aria-busy={busy}>
         <div className="results-section-heading"><span className="eyebrow">02 / Find the one</span><span className="panel-label">{meta}</span></div>
         <div className="live-region" aria-live="polite">{busy && <div className="loading-state"><Signal busy /><p>{aliasBusy ? 'Finding your alter ego…' : 'Tuning into your direction…'}</p><span>Good names take a moment.</span></div>}</div>
         {state.error !== null && <div className="error-banner" role="alert"><p>{state.error.message}</p>{state.error.retryable && state.errorSnapshot !== null && !busy && <button type="button" className="banner-action" onClick={() => store.retryFailedRequest()}>Retry</button>}</div>}
-        {batch === null && !busy && state.error === null && <div className="empty-hint create-empty"><span className="empty-symbol" aria-hidden="true">↗</span><div><h2>Let&apos;s hear what it could be.</h2><p>Add a brief or hit Surprise me. Your names will appear here.</p></div><span className="empty-index" aria-hidden="true">— / —</span></div>}
+        {batch === null && !busy && state.error === null && <div className="empty-hint create-empty"><span className="empty-symbol" aria-hidden="true">↗</span><div><h2>Let&apos;s hear what it could be.</h2><p>{state.mode === 'artist' ? 'Write a brief and roll it, or use an alter-ego card below. Your names will appear here.' : 'Add a brief or hit Surprise me. Your names will appear here.'}</p></div><span className="empty-index" aria-hidden="true">— / —</span></div>}
         {batch !== null && <div className="results" aria-label={`Results — ${MODE_LABELS[batch.mode]}`}>
           <div className="results-head"><h2>Names with a little possibility.</h2>{hasHistory && <div className="batch-nav"><button type="button" disabled={state.viewIndex === 0} onClick={() => store.setViewIndex(state.viewIndex - 1)}>Older</button><span aria-hidden="true">{state.viewIndex + 1} / {state.batches.length}</span><button type="button" disabled={state.viewIndex === state.batches.length - 1} onClick={() => store.setViewIndex(state.viewIndex + 1)}>Newer</button></div>}</div>
           <p className="hint-line">Select a name to explore. Star the ones that stay with you.</p>

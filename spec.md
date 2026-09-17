@@ -24,7 +24,7 @@ The standalone web app is the only v0.1 frontend. Future ChatGPT integration is 
 
 Two destinations: **Create** and **Shortlist**.
 
-Create contains a compact mode selector, one optional brief field, collapsed Options, and one primary generation button. The brief can contain sound, mood, story, keywords, references, or a short lyric excerpt. Options contain language (default English) and length (Auto or Short). Label the generation button **Surprise me** when the brief is empty. In Artist mode the primary button rolls the selected alias persona, chosen next to the mode selector.
+Create contains a compact mode selector, one optional brief field, collapsed Options, and one primary generation button. The brief can contain sound, mood, story, keywords, references, or a short lyric excerpt. Options contain language (default English) and length (Auto or Short). Label the generation button **Surprise me** when the brief is empty. In Artist mode the primary button reads the brief and works the alias style out from it, and three alter-ego cards offer the same brief-driven roll plus the two fixed personas, which need no brief.
 
 Limits, measured consistently in Unicode code points:
 
@@ -85,7 +85,7 @@ DeepSeek Flash is the only runtime naming model.
 | Generate (Track, Artist) | 8 | 6 |
 | Generate (Release) — one album | 1 title + 12 tracks | 1 title + 10 tracks |
 | Refine | 6 | 4 |
-| Wu-style or emo alias (Artist) | 8 | 6 |
+| Alias (Artist) — Wu-style, emo, or worked out from the brief | 8 | 6 |
 | Replace one track (Release) | 3 | 1 |
 
 For context-based generation, put approximately four close interpretations and two wider interpretations in the first six positions. The last two are varied reserves. Do not routinely hide unusual candidates at the end. These are creative instructions, not visible categories or hard classification requirements.
@@ -94,7 +94,7 @@ For blank briefs, vary the naming approaches without inventing facts about the u
 
 Refinement preserves something recognisable from the seed while following the latest instruction. Avoid cosmetic spelling variants.
 
-- Artist: prioritise pronounceability and memorability; the alias personas hand out two-word stage names.
+- Artist: prioritise pronounceability and memorability; the alias personas hand out two-word stage names, and the brief-driven style has to fit what the brief describes.
 - Track: names may be concrete or fragmentary.
 - Release: the title expresses the album's broader concept and its tracks form a running order — ordered, distinct from the title and from each other, each supporting the title.
 - A replacement track must fit the supplied album title and the remaining tracks, and must not repeat the title or any supplied track.
@@ -152,14 +152,16 @@ Use JSON object mode plus application validation for v0.1. No JSON Schema endpoi
    server-trial with thinking enabled on generate/refine was reverted the same day after live
    fixtures truncated on the ceiling at ~25 s/call (evidence in `creative-results-2026-09-06.md`).
    The alias operation selects a stable persona from `aliasStyle`: `wu` (an invented “Keeper of
-   the Iron Tongue” naming elder) or `emo` (“Nobody's Darling”, sad cloud-rap A&R); real member
-   aliases and real artists in each scene are explicitly excluded. System prompts are stable
-   server-side constants, never user-supplied. All §6 output-shape, filtering, and selection
-   rules apply unchanged; admission, kill switch, and rate limits are identical.
+   the Iron Tongue” naming elder), `emo` (“Nobody's Darling”, sad cloud-rap A&R), or `brief`,
+   which has no house style of its own and derives the names from the supplied brief — so that
+   style requires a non-empty brief. Real member aliases and real artists in each scene are
+   explicitly excluded. System prompts are stable server-side constants, never user-supplied. All
+   §6 output-shape, filtering, and selection rules apply unchanged; admission, kill switch, and
+   rate limits are identical.
 3. A Release request produces **one album** — a title plus its track list — instead of a batch of
    interchangeable names, and the shortlist stores that album as a single entry. Artist mode
-   always uses the alias operation, so the main Artist button rolls the selected persona instead
-   of naming an artist through the generic path.
+   always uses the alias operation, so the main Artist button works from the brief and the
+   alter-ego cards name the two fixed personas.
 4. A fourth operation, **replaceTrack**, exists for Release batches only: the client sends the
    album title and the tracks that remain, the model returns three candidates, and exactly one
    new track title is used for the slot. It runs with thinking disabled and shares every

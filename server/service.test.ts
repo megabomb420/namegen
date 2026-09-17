@@ -157,6 +157,41 @@ describe('runNamingRequest', () => {
     expect(payload.aliasStyle).toBe('emo');
   });
 
+  it('works the style out from the brief when aliasStyle is brief', async () => {
+    const fetchImpl = okFetch([
+      'Quarry Ledger',
+      'Lime Dust Choir',
+      'Pump House',
+      'Blue Rung',
+      'Night Shift Whistle',
+      'Flood Line',
+      'Cold Meal',
+      'Rafters',
+    ]);
+    const result = await runNamingRequest(
+      {
+        operation: 'alias',
+        mode: 'artist',
+        aliasStyle: 'brief',
+        brief: 'producer making melancholy UK garage about a flooded quarry town',
+      },
+      requestDeps(fetchImpl as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ ok: true, partial: false });
+
+    const [, init] = fetchImpl.mock.calls[0];
+    const body = JSON.parse(String(init?.body));
+    // Same paid alias path: thinking enabled, its own persona, the brief read.
+    expect(body.thinking).toEqual({ type: 'enabled' });
+    expect(body.max_tokens).toBe(2500);
+    expect(body.messages[0].content).toContain('no house style');
+    const payload = JSON.parse(body.messages[1].content);
+    expect(payload.task).toContain('from the brief');
+    expect(payload.aliasStyle).toBe('brief');
+    expect(payload.brief).toContain('flooded quarry town');
+    expect(payload).not.toHaveProperty('length');
+  });
+
   it('rejects an unknown aliasStyle', async () => {
     const fetchImpl = vi.fn();
     const result = await runNamingRequest(
