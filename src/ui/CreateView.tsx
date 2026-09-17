@@ -1,11 +1,19 @@
 import { countCodePoints } from '../../shared/text';
 import type { AppStore } from '../state/appStore';
 import { activeBrief, findSaved } from '../state/helpers';
-import type { AppState, DisplayBatch } from '../state/types';
+import type { AlbumBatch, AppState, DisplayBatch } from '../state/types';
 import { NameRow } from './NameRow';
-import { MODE_OPTIONS, LENGTH_OPTIONS, MODE_LABELS } from './labels';
+import {
+  ALBUM_TITLE_KICKER,
+  ALIAS_STYLE_OPTIONS,
+  MODE_OPTIONS,
+  LENGTH_OPTIONS,
+  MODE_LABELS,
+  albumMeta,
+  aliasActionLabel,
+} from './labels';
 import { pickRandomBrief } from './randomBriefs';
-import { ShuffleIcon, ArrowIcon } from './icons';
+import { ShuffleIcon, ArrowIcon, StarFilledIcon, StarIcon } from './icons';
 
 interface CreateViewProps { state: AppState; store: AppStore }
 
@@ -24,6 +32,16 @@ export function CreateView({ state, store }: CreateViewProps) {
   const hasHistory = state.batches.length > 1;
   const canSubmit = !busy && !briefOver;
   const aliasBusy = state.requestActive && state.pending?.kind === 'alias';
+  const meta = batch === null
+    ? 'A blank slate. For now.'
+    : batch.kind === 'album'
+      ? albumMeta(batch.tracks.length)
+      : `${MODE_LABELS[batch.mode]} / ${String(batch.names.length).padStart(2, '0')} ideas`;
+  const generateLabel = busy
+    ? (aliasBusy ? 'Thinking…' : 'Naming…')
+    : state.mode === 'artist'
+      ? aliasActionLabel(state.aliasStyle)
+      : brief.trim() === '' ? 'Surprise me' : 'Generate';
 
   return (
     <section className="view create-view" aria-label="Create names">
@@ -74,20 +92,28 @@ export function CreateView({ state, store }: CreateViewProps) {
             </div>}
           </div>
           <button type="button" className={`primary generate-button${busy ? ' is-busy' : ''}`} disabled={!canSubmit} onClick={() => store.generate()}>
-            <span>{busy ? (aliasBusy ? 'Thinking…' : 'Naming…') : brief.trim() === '' ? 'Surprise me' : 'Generate'}</span><ArrowIcon size={23} />
+            <span>{generateLabel}</span><ArrowIcon size={23} />
           </button>
           <p className="form-note">{brief.trim() === '' ? 'Leave the brief open. See where it takes you.' : 'Follow the feeling. You can refine the names next.'}</p>
         </div>
       </div>
       {state.mode === 'artist' && <section className="alias-tools" aria-labelledby="alias-heading">
-        <div className="alias-section-head"><p className="eyebrow">Another way in</p><h2 id="alias-heading">Find your alter ego.</h2><p>Roll an original artist alias in a signature style.</p></div>
-        <div className="alias-grid">
-          <div className="alias-card"><span className="alias-title">Keeper of the Iron Tongue</span><p className="micro-note">Wu-Tang style — gritty, memorable two-word stage names.</p><button type="button" className="alias-roll" disabled={busy} onClick={() => store.generateAlias('wu')}>{aliasBusy ? 'Thinking…' : 'Have the Keeper name you'}<ArrowIcon size={18} /></button></div>
-          <div className="alias-card"><span className="alias-title">Nobody&apos;s Darling</span><p className="micro-note">Emo / cloud-rap — soft, melancholic two-word names.</p><button type="button" className="alias-roll" disabled={busy} onClick={() => store.generateAlias('emo')}>{aliasBusy ? 'Thinking…' : 'Summon a sad name'}<ArrowIcon size={18} /></button></div>
+        <div className="alias-section-head"><p className="eyebrow">Another way in</p><h2 id="alias-heading">Find your alter ego.</h2><p>Pick a persona, then roll it for an original artist alias.</p></div>
+        <div className="persona-picker">
+          <div className="persona-group" role="group" aria-label="Alias style">
+            {ALIAS_STYLE_OPTIONS.map((option) => <button key={option.value} type="button"
+              className={`persona-segment${state.aliasStyle === option.value ? ' persona-segment-on' : ''}`}
+              aria-pressed={state.aliasStyle === option.value} aria-label={option.label}
+              onClick={() => store.setAliasStyle(option.value)}>
+              <span className="persona-name">{option.label}</span>
+              <span className="persona-blurb">{option.blurb}</span>
+            </button>)}
+          </div>
+          <p className="micro-note">Artist names always come from the alias roll — the button above rolls the selected persona.</p>
         </div>
       </section>}
       <section className="results-section" aria-label="Naming results" aria-busy={busy}>
-        <div className="results-section-heading"><span className="eyebrow">02 / Find the one</span><span className="panel-label">{batch ? `${MODE_LABELS[batch.mode]} / ${String(batch.names.length).padStart(2, '0')} ideas` : 'A blank slate. For now.'}</span></div>
+        <div className="results-section-heading"><span className="eyebrow">02 / Find the one</span><span className="panel-label">{meta}</span></div>
         <div className="live-region" aria-live="polite">{busy && <div className="loading-state"><Signal busy /><p>{aliasBusy ? 'Finding your alter ego…' : 'Tuning into your direction…'}</p><span>Good names take a moment.</span></div>}</div>
         {state.error !== null && <div className="error-banner" role="alert"><p>{state.error.message}</p>{state.error.retryable && state.errorSnapshot !== null && !busy && <button type="button" className="banner-action" onClick={() => store.retryFailedRequest()}>Retry</button>}</div>}
         {batch === null && !busy && state.error === null && <div className="empty-hint create-empty"><span className="empty-symbol" aria-hidden="true">↗</span><div><h2>Let&apos;s hear what it could be.</h2><p>Add a brief or hit Surprise me. Your names will appear here.</p></div><span className="empty-index" aria-hidden="true">— / —</span></div>}
@@ -95,14 +121,59 @@ export function CreateView({ state, store }: CreateViewProps) {
           <div className="results-head"><h2>Names with a little possibility.</h2>{hasHistory && <div className="batch-nav"><button type="button" disabled={state.viewIndex === 0} onClick={() => store.setViewIndex(state.viewIndex - 1)}>Older</button><span aria-hidden="true">{state.viewIndex + 1} / {state.batches.length}</span><button type="button" disabled={state.viewIndex === state.batches.length - 1} onClick={() => store.setViewIndex(state.viewIndex + 1)}>Newer</button></div>}</div>
           <p className="hint-line">Select a name to explore. Star the ones that stay with you.</p>
           {batch.partial && <p className="partial-note">A smaller batch this time.</p>}
-          <ResultList batch={batch} state={state} store={store} /><p className="availability-note">Availability not checked.</p>
+          <ResultSet batch={batch} state={state} store={store} /><p className="availability-note">Availability not checked.</p>
         </div>}
       </section>
     </section>
   );
 }
 
-function ResultList({ batch, state, store }: { batch: DisplayBatch; state: AppState; store: AppStore }) {
+function ResultSet({ batch, state, store }: { batch: DisplayBatch; state: AppState; store: AppStore }) {
+  if (batch.kind === 'album') return <AlbumResults batch={batch} state={state} store={store} />;
   return <ul className="name-list">{batch.names.map((name) => <li key={`${batch.id}-${name}`}><NameRow name={name} mode={batch.mode} saved={findSaved(state.shortlist, name, batch.mode) !== -1} onOpen={() => store.openExplore(name, batch)} onToggleSave={() => store.toggleSave(name, batch.mode)} onCopy={() => void store.copyName(name)} /></li>)}</ul>;
 }
 
+/** One release: the album title row, then its numbered, replaceable tracks. */
+function AlbumResults({ batch, state, store }: { batch: AlbumBatch; state: AppState; store: AppStore }) {
+  const busy = state.requestActive;
+  const albumSaved = findSaved(state.shortlist, batch.title, 'release') !== -1;
+  return <div className="album-block">
+    <div className="album-title-row">
+      <button type="button" className="album-title-open"
+        aria-label={`Explore “${batch.title}” for more like this`}
+        onClick={() => store.openExplore(batch.title, batch)}>
+        <span className="album-title-kicker">{ALBUM_TITLE_KICKER}</span>
+        <span className="album-title-text">{batch.title}</span>
+      </button>
+      <button type="button" className="icon-button save-toggle" aria-pressed={albumSaved}
+        aria-label={albumSaved ? `Remove “${batch.title}” from shortlist` : `Save “${batch.title}” to shortlist`}
+        onClick={() => store.toggleSaveAlbum(batch)}>
+        {albumSaved ? <StarFilledIcon size={22} /> : <StarIcon size={22} />}
+      </button>
+    </div>
+    <ul className="track-list">
+      {batch.tracks.map((track, index) => {
+        const pending = state.pending;
+        const inFlight = pending !== null && pending.kind === 'replaceTrack'
+          && pending.batchId === batch.id && pending.trackIndex === index;
+        const failure = state.replacementError;
+        const error = failure !== null && failure.batchId === batch.id && failure.index === index
+          ? { message: failure.message, retryable: failure.retryable }
+          : null;
+        return <li key={`${batch.id}-track-${index}`}>
+          <NameRow name={track} mode="release" saved={findSaved(state.shortlist, track, 'release') !== -1}
+            onOpen={() => store.openExplore(track, batch)}
+            onToggleSave={() => store.toggleSave(track, 'release')}
+            onCopy={() => void store.copyName(track)}
+            replace={{
+              disabled: busy,
+              busy: inFlight,
+              error,
+              onReplace: () => store.replaceTrack(batch.id, index),
+              onRetry: () => store.retryReplacement(),
+            }} />
+        </li>;
+      })}
+    </ul>
+  </div>;
+}

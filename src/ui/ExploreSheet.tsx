@@ -202,7 +202,11 @@ function SeedSummary({
   state: AppState;
   store: AppStore;
 }) {
-  const saved = findSaved(state.shortlist, explore.seed, explore.mode) !== -1;
+  // An album seed saves or removes the whole release as one entry.
+  const album = explore.album;
+  const saved = album !== null
+    ? findSaved(state.shortlist, album.title, 'release') !== -1
+    : findSaved(state.shortlist, explore.seed, explore.mode) !== -1;
   return (
     <div className="seed-summary">
       <p className="seed-meta">
@@ -215,7 +219,7 @@ function SeedSummary({
           type="button"
           className={`chip${saved ? ' chip-on' : ''}`}
           aria-pressed={saved}
-          onClick={() => store.toggleSave(explore.seed, explore.mode)}
+          onClick={() => store.toggleExploreSave()}
         >
           {saved ? <StarFilledIcon size={16} /> : <StarIcon size={16} />}
           {saved ? 'Saved' : 'Save'}

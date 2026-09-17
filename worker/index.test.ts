@@ -60,6 +60,18 @@ function providerOk(names: string[]): Response {
   );
 }
 
+function providerAlbum(title: string, tracks: string[]): Response {
+  return new Response(
+    JSON.stringify({
+      choices: [
+        { index: 0, message: { role: 'assistant', content: JSON.stringify({ title, tracks }) }, finish_reason: 'stop' },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
+
 function providerStatus(status: number, bodyText = ''): Response {
   return new Response(bodyText, { status });
 }
@@ -266,6 +278,39 @@ describe('result mapping', () => {
       names: ['One', 'Two', 'Three', 'Four', 'Five', 'Six'],
       partial: false,
     });
+  });
+
+  it('returns the album body for a release-mode request, no-store cached', async () => {
+    const tracks = Array.from({ length: 12 }, (_, i) => `Track ${i + 1}`);
+    vi.stubGlobal('fetch', vi.fn(async () => providerAlbum('Tide Book', tracks)));
+    const response = await handleRequest(
+      apiRequest({ operation: 'generate', mode: 'release', brief: 'slow coastal techno' }),
+      makeEnv().workerEnv,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const body = await readJson(response);
+    expect(body).toEqual({
+      album: { title: 'Tide Book', tracks: tracks.slice(0, 10) },
+      partial: false,
+    });
+  });
+
+  it('returns the names body with a single candidate for replaceTrack', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => providerOk(['Third Rail', 'Signal Fog', 'Last Ferry'])));
+    const response = await handleRequest(
+      apiRequest({
+        operation: 'replaceTrack',
+        mode: 'release',
+        albumTitle: 'Tide Book',
+        tracks: ['Harbor Lights', 'Salt Air'],
+      }),
+      makeEnv().workerEnv,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const body = await readJson(response);
+    expect(body).toEqual({ names: ['Third Rail'], partial: false });
   });
 
   it('maps provider errors to sanitised JSON, never raw bodies', async () => {

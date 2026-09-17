@@ -13,6 +13,7 @@ import {
   INSTRUCTION_MAX,
   LANGUAGE_MAX,
   NAME_MAX,
+  TRACKS_MAX,
 } from '../shared/limits';
 import { countCodePoints, hasControlCharacter, nameKey } from '../shared/text';
 
@@ -25,6 +26,9 @@ const MAX_LANGUAGE_MSG = `Language exceeds ${LANGUAGE_MAX} characters.`;
 const MAX_SEED_MSG = `Name exceeds ${NAME_MAX} characters.`;
 const MAX_INSTRUCTION_MSG = `Refinement instruction exceeds ${INSTRUCTION_MAX} characters.`;
 const MAX_AVOID_MSG = `The avoid list exceeds ${AVOID_MAX} names.`;
+const MAX_ALBUM_TITLE_MSG = `Album title exceeds ${NAME_MAX} characters.`;
+const MAX_TRACKS_MSG = `The album context exceeds ${TRACKS_MAX} tracks.`;
+const INVALID_TRACK_MSG = 'Track list contains an invalid name.';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -54,13 +58,25 @@ function optionalBoundedString(raw: Record<string, unknown>, key: string, max: n
 export function normalizeRequest(raw: unknown): RequestValidationResult {
   if (!isRecord(raw)) return fail('Request body must be a JSON object.');
 
-  const allowed = new Set(['operation', 'mode', 'brief', 'language', 'length', 'seed', 'instruction', 'avoid', 'aliasStyle']);
+  const allowed = new Set([
+    'operation',
+    'mode',
+    'brief',
+    'language',
+    'length',
+    'seed',
+    'instruction',
+    'avoid',
+    'aliasStyle',
+    'albumTitle',
+    'tracks',
+  ]);
   for (const key of Object.keys(raw)) {
     if (!allowed.has(key)) return fail('Unexpected field in request.');
   }
 
   if (typeof raw.operation !== 'string' || !OPERATIONS.includes(raw.operation as Operation)) {
-    return fail('Operation must be "generate" or "refine".');
+    return fail('Operation must be "generate", "refine", "alias" or "replaceTrack".');
   }
   const operation = raw.operation as Operation;
 
@@ -122,6 +138,39 @@ export function normalizeRequest(raw: unknown): RequestValidationResult {
     aliasStyle = 'wu';
   }
 
+  // replaceTrack is release-only and carries the album a new track must fit:
+  // the album title plus the tracks that remain. Both are data, not instruction.
+  let albumTitle: string | null = null;
+  let tracks: string[] = [];
+  if (operation === 'replaceTrack') {
+    if (mode !== 'release') return fail('Replacement requests must use mode "release".');
+
+    const titleField = optionalBoundedString(raw, 'albumTitle', NAME_MAX);
+    if (titleField.status === 'invalid') return fail(MAX_ALBUM_TITLE_MSG);
+    if (titleField.status === 'value' && hasControlCharacter(titleField.value)) {
+      return fail('Album title contains invalid characters.');
+    }
+    albumTitle = titleField.status === 'value' ? titleField.value : null;
+
+    if (!Array.isArray(raw.tracks)) return fail('Tracks must be an array of names.');
+    if (raw.tracks.length > TRACKS_MAX) return fail(MAX_TRACKS_MSG);
+    const seenTracks = new Set<string>();
+    for (const entry of raw.tracks) {
+      if (typeof entry !== 'string') return fail(INVALID_TRACK_MSG);
+      const trimmed = entry.trim();
+      if (trimmed === '') continue;
+      if (countCodePoints(trimmed) > NAME_MAX || hasControlCharacter(trimmed)) return fail(INVALID_TRACK_MSG);
+      const key = nameKey(trimmed);
+      if (!seenTracks.has(key)) {
+        seenTracks.add(key);
+        tracks.push(trimmed);
+      }
+    }
+  } else {
+    if (raw.albumTitle !== undefined) return fail('Album title is only allowed for replacement requests.');
+    if (raw.tracks !== undefined) return fail('Tracks are only allowed for replacement requests.');
+  }
+
   // Avoid list: bounded count, each entry bounded and clean, deduplicated by
   // comparison key. Duplicates never inflate the wire list.
   let avoid: string[] = [];
@@ -144,6 +193,17 @@ export function normalizeRequest(raw: unknown): RequestValidationResult {
     }
   }
 
-  const value: NormalizedRequest = { operation, mode, brief, language, length, seed, instruction, avoid, aliasStyle };
+  const value: NormalizedRequest = {
+    operation,
+    mode,
+    brief,
+    language,
+    length,
+    seed,
+    instruction,
+    avoid,
+    aliasStyle,
+    ...(operation === 'replaceTrack' ? { albumTitle, tracks } : {}),
+  };
   return { ok: true, value };
 }

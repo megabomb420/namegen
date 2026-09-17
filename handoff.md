@@ -1,6 +1,6 @@
 # Implementation handoff — [HANDOFF]
 
-Updated: 2026-09-17 (second pass). The frontend redesign is complete and published to Sites, GitHub Pages, and the existing Cloudflare Worker. A later pass the same day moved the provider model id to `deepseek-flash` and synced `spec.md` with the retired-PWA reality. This document supersedes the earlier PWA deployment instructions. The naming logic was not rewritten.
+Updated: 2026-09-17 (third pass). The frontend redesign is complete and published to Sites, GitHub Pages, and the existing Cloudflare Worker. Earlier passes the same day moved the provider model id to `deepseek-flash` and synced `spec.md` with the retired-PWA reality. The latest pass changed what Release and Artist produce and added per-track replacement, so the response contract and the client state shape were reworked — see the third-pass section below. This document supersedes the earlier PWA deployment instructions.
 
 ## Current state and live locations
 
@@ -21,6 +21,18 @@ React + TypeScript + Vite remain the frontend stack. Both static hosts call the 
 - The stale comment in `server/config.ts` claiming thinking is enabled for every operation was replaced with the actual routing: the `THINKING_SETTINGS` block applies to the alias operation only.
 - `spec.md` was synced with reality: the model name (§5, §6), the authoritative limiter (§9 now states the Durable Object cap of 3 requests per 60 seconds per client IP via `NAMING_LIMIT_PER_MINUTE`, with the Cloudflare binding as an extra edge layer, instead of "10 requests per 60 seconds"), the two-static-host deployment deviation, and §10, which now documents offline behaviour and service-worker retirement rather than requiring a PWA. The PWA-era wording elsewhere in the document (§1, §3, §7, §8, §11, §12) was corrected with it.
 - `creative-results-2026-09-06.md` was deliberately left untouched: it is a dated record of runs performed against the model id current at that time.
+
+## 2026-09-17 third pass: Release albums, always-alias Artist, per-track replacement
+
+Product decisions taken by the owner, then implemented:
+
+- **Release names one album.** `generate` + `mode: "release"` now asks for one album title plus 12 track titles and displays the title with up to 10 tracks (`ALBUM_TRACKS` in `shared/limits.ts`, `isAlbumRequest` in `server/config.ts`), instead of six interchangeable release names. The model must answer `{"title": …, "tracks": […]}`; `selectAlbum` in `server/selection.ts` validates that shape as strictly as the names shape and never reconstructs an unusable title.
+- **Artist always rolls an alias.** The main Artist button issues the existing `alias` operation with the selected persona, chosen by a segmented control in place of the old "Alias tools" cards. The generic `generate` path stays available in the API for Track and Release and remains fixture-covered.
+- **A whole album is one shortlist entry.** `SavedEntry` is a union (`name` | `album` with title and tracks); copying an album emits the title followed by numbered tracks. Within a mode there is still one entry per title, so the Save chip in Explore toggles the album entry itself when the sheet was opened from an album title.
+- **A track can be replaced.** A per-track action issues the new `replaceTrack` operation (Release only, thinking disabled, 3 candidates from which one is used), carrying `albumTitle` and the remaining `tracks` as context and as exclusions. The old title stays visible until the replacement succeeds; on failure the row keeps it and offers an explicit Retry. No automatic retry anywhere, and the transport lock still permits only one paid request at a time.
+- **Contract:** success is now `{"names":[…],"partial":…}` **or** `{"album":{"title":…,"tracks":[…]}, "partial":…}`. `NamingSuccess` carries a `kind` discriminant, and the Worker, the client decoder, the store and the session/shortlist storage were updated together.
+- **Storage stayed additive:** keys and `version: 1` are unchanged and stored items without a `kind` are read as plain names, so an existing shortlist and session survive the change.
+- **Bug fixed on the way:** `generateAlias` never sent `language`, so an alias batch carried `language: ""` and `validStoredBatch` then rejected the **whole** session on reload. Alias now sends `language` (and both personas were told to follow it), and the batch keeps it.
 
 ## Redesign scope
 
@@ -109,13 +121,14 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 
 ## Naming behavior to preserve
 
-- Generate asks for 8 candidates and displays up to 6; refine asks for 6 and displays up to 4; alias asks for 8 and displays up to 6.
-- Generate/refine keep thinking disabled with the configured 800-token ceiling. Alias uses thinking enabled, low effort and a 2,500-token ceiling, with the `wu` or `emo` persona. `server/service.ts` determines this per operation, and `server/config.ts` documents the alias-only scope of `THINKING_SETTINGS`.
+- Generate asks for 8 candidates and displays up to 6; refine asks for 6 and displays up to 4; alias asks for 8 and displays up to 6; a Release generate asks for one album title plus 12 track titles and displays the title with up to 10 tracks; replaceTrack asks for 3 and uses 1.
+- Every naming request — generate, refine, album and replaceTrack — keeps thinking disabled with the configured 800-token ceiling. Alias uses thinking enabled, low effort and a 2,500-token ceiling, with the `wu` or `emo` persona. `server/service.ts` determines this per operation, and `server/config.ts` documents the alias-only scope of `THINKING_SETTINGS`.
 - Only a provider finish reason of exactly `stop` is accepted. Invalid/truncated outputs are not reconstructed or automatically retried.
 - Failed requests retry only on explicit user action, using the failed snapshot. Editing and generating is a new request.
 - One request remains active until settlement, even when visible work is cleared or Explore is closed. Epoch checks prevent stale responses restoring invalidated state.
-- Refinement batches enter the same bounded recovery history as generation. Raw briefs and instructions remain memory-only; successful name batches and metadata are restored from sessionStorage.
-- Shortlist is versioned localStorage, capped at 300 without silently evicting entries. Save, copy and opening Explore do not themselves call the provider.
+- Refinement batches enter the same bounded recovery history as generation. Raw briefs and instructions remain memory-only; successful batches and metadata are restored from sessionStorage.
+- An album batch is one unit: its title row saves the whole release as a single entry, its track rows behave exactly like names, and a track replacement never removes a title before the new one arrives.
+- Shortlist is versioned localStorage, capped at 300 entries without silently evicting them. Save, copy and opening Explore do not themselves call the provider.
 - Comparison keys use NFKD and Unicode case folding; display spelling/diacritics are preserved.
 - The authoritative cap is the existing Durable Object: 3 requests/minute per client IP, fail-closed on missing/broken binding; denied requests return 429 and Retry-After. The Cloudflare rate-limit binding remains an additional layer. The original live cap test is recorded in the historical notes below.
 - NameGen keeps no server copy of briefs/results. This does not assert anything about DeepSeek's own retention.
@@ -139,6 +152,13 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 - Model id verified live on 2026-09-17 after deploying: one `POST /api/generate` to production returned HTTP 200 with six names in 1.24 s (`Last Bus, Cold Hands | Screen Crack Shuffle | Two Fare Stops | Hands Like Ice | Bus Shelter Bass | Cracked Glass Glow`), so `deepseek-flash` is accepted by the real provider. This is a single smoke call, not a creative-quality pass: the paid 12-fixture rerun is still outstanding.
 - Deployed Worker version `cdcec77d-1bde-446b-80b3-6e2fdaac476d`; GitHub Pages workflow run 35280310430 succeeded for the same commit. No `.dev.vars` and no DeepSeek key exist on this machine, so no local provider call was possible.
 - The model id lives only in `server/config.ts` on the Worker. The Pages and Sites copies are static frontends that call the same Worker and carry no provider settings, so they need no rebuild for this change.
+
+### 2026-09-17 third pass: album, always-alias Artist, per-track replacement
+
+- `npm run typecheck` clean, `npm test` **183 tests in 11 files** pass (131 before this change), `npm run build:worker` succeeds.
+- The release journey is covered end to end in jsdom: the album renders as a title plus numbered tracks, replacing one track swaps only that row, the album saves as a single shortlist entry, a reload restores it, and copying emits the title with numbered tracks.
+- No browser or visual pass was done for the new album, track-list and persona UI — only that jsdom journey and the stylesheet by construction. Treat the layout as unverified until it has been seen on a screen.
+- The live provider has never been asked for an album: the `{"title","tracks"}` shape and `replaceTrack` are exercised against mocks only. Verify with one production album call and one replacement call after deploying, and record the observed token usage against the ~67-token eight-name baseline.
 
 ### Retained historical evidence: 2026-09-06
 

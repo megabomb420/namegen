@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppStore, type StoreDeps } from './appStore';
-import type { StoredSession } from '../browser/storage';
+import type { StoredBatch, StoredPrefs, StoredSession } from '../browser/storage';
+import * as storage from '../browser/storage';
 import type { WireOutcome } from '../browser/api';
-import type { SavedName } from './types';
+import type { AlbumBatch, AppState, DisplayBatch, SavedEntry } from './types';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -11,30 +12,73 @@ function deferred<T>() {
 }
 
 function successNames(names: string[], partial = false): WireOutcome {
-  return { ok: true, names, partial };
+  return { ok: true, kind: 'names', names, partial };
+}
+
+function successAlbum(title: string, tracks: string[], partial = false): WireOutcome {
+  return { ok: true, kind: 'album', title, tracks, partial };
+}
+
+/** The displayed names of a batch, whichever shape it is. */
+function batchNames(batch: DisplayBatch): string[] {
+  return batch.kind === 'names' ? batch.names : batch.tracks;
+}
+
+/** The stored names of a batch, whichever shape it is. */
+function storedNames(batch: StoredBatch): string[] {
+  return batch.kind === 'album' ? batch.tracks : batch.names;
+}
+
+function albumBatch(state: AppState): AlbumBatch {
+  const batch = state.batches[state.batches.length - 1];
+  if (batch.kind !== 'album') throw new Error('expected the current batch to be an album');
+  return batch;
+}
+
+/** Minimal Web Storage over a Map, so real storage validation can run in node. */
+function memoryStorage(): Storage {
+  const map = new Map<string, string>();
+  return {
+    get length() {
+      return map.size;
+    },
+    clear: () => map.clear(),
+    getItem: (key: string) => map.get(key) ?? null,
+    key: (index: number) => [...map.keys()][index] ?? null,
+    removeItem: (key: string) => {
+      map.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      map.set(key, value);
+    },
+  };
 }
 
 interface HarnessOptions {
   submitImpl?: () => Promise<WireOutcome>;
-  persistShortlistImpl?: (items: SavedName[]) => boolean;
+  persistShortlistImpl?: (items: SavedEntry[]) => boolean;
   persistSessionImpl?: (session: StoredSession) => boolean;
   clearSessionImpl?: () => boolean;
+  loadSessionImpl?: () => StoredSession | null;
   sessionSeed?: StoredSession | null;
-  shortlistSeed?: SavedName[];
+  shortlistSeed?: SavedEntry[];
+  copyImpl?: (text: string) => Promise<boolean>;
 }
 
 interface Harness {
   store: AppStore;
   submit: ReturnType<typeof vi.fn>;
   sessionWrites: StoredSession[];
-  shortlistWrites: SavedName[][];
+  shortlistWrites: SavedEntry[][];
+  prefsWrites: StoredPrefs[];
 }
 
 function makeHarness(options: HarnessOptions = {}): Harness {
   let sessionValue: StoredSession | null = options.sessionSeed ?? null;
-  let shortlistValue: SavedName[] = options.shortlistSeed ?? [];
+  let shortlistValue: SavedEntry[] = options.shortlistSeed ?? [];
   const sessionWrites: StoredSession[] = [];
-  const shortlistWrites: SavedName[][] = [];
+  const shortlistWrites: SavedEntry[][] = [];
+  const prefsWrites: StoredPrefs[] = [];
   const submit = vi.fn(options.submitImpl ?? (async () => successNames(['First', 'Second', 'Third'])));
   let idCounter = 0;
   const deps: StoreDeps = {
@@ -49,8 +93,11 @@ function makeHarness(options: HarnessOptions = {}): Harness {
       return ok;
     },
     loadPrefs: () => null,
-    persistPrefs: () => true,
-    loadSession: () => sessionValue,
+    persistPrefs: (prefs) => {
+      prefsWrites.push(prefs);
+      return true;
+    },
+    loadSession: () => (options.loadSessionImpl ? options.loadSessionImpl() : sessionValue),
     persistSession: (session) => {
       const ok = options.persistSessionImpl ? options.persistSessionImpl(session) : true;
       if (ok) {
@@ -66,14 +113,15 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     },
     now: () => 1000,
     randomId: () => `id-${++idCounter}`,
-    copy: async () => true,
+    copy: options.copyImpl ?? (async () => true),
     later: () => undefined,
   };
-  return { store: new AppStore(deps), submit, sessionWrites, shortlistWrites };
+  return { store: new AppStore(deps), submit, sessionWrites, shortlistWrites, prefsWrites };
 }
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('generate', () => {
@@ -87,12 +135,12 @@ describe('generate', () => {
     await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
     const s = h.store.getState();
     expect(s.batches).toHaveLength(1);
-    expect(s.batches[0].names).toEqual(['Alpha', 'Beta', 'Gamma']);
+    expect(batchNames(s.batches[0])).toEqual(['Alpha', 'Beta', 'Gamma']);
     expect(s.batches[0].brief).toBe('');
     expect(s.batches[0].partial).toBe(true);
     expect(s.error).toBeNull();
     expect(h.sessionWrites).toHaveLength(1);
-    expect(h.sessionWrites[0].batches[0].names).toEqual(['Alpha', 'Beta', 'Gamma']);
+    expect(storedNames(h.sessionWrites[0].batches[0])).toEqual(['Alpha', 'Beta', 'Gamma']);
     expect(h.sessionWrites[0].avoid).toEqual(['Alpha', 'Beta', 'Gamma']);
   });
 
@@ -191,6 +239,218 @@ describe('generate', () => {
   });
 });
 
+describe('release albums', () => {
+  it('stores one album batch and persists its title and tracks', async () => {
+    const h = makeHarness({
+      submitImpl: async () => successAlbum('Rain On The Windscreen', ['Wipers On Low', 'Halfway Home'], true),
+    });
+    h.store.setMode('release');
+    h.store.generate();
+    expect(h.submit.mock.calls[0][0]).toMatchObject({ operation: 'generate', mode: 'release' });
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const batch = h.store.getState().batches[0];
+    expect(batch).toMatchObject({
+      kind: 'album',
+      title: 'Rain On The Windscreen',
+      tracks: ['Wipers On Low', 'Halfway Home'],
+      partial: true,
+      mode: 'release',
+      language: 'English',
+      length: 'auto',
+    });
+    // The album title and every track join the exclusion list.
+    expect(h.store.getState().avoidNames).toEqual(['Rain On The Windscreen', 'Wipers On Low', 'Halfway Home']);
+    expect(h.sessionWrites[0].batches[0]).toEqual({
+      kind: 'album',
+      title: 'Rain On The Windscreen',
+      tracks: ['Wipers On Low', 'Halfway Home'],
+      partial: true,
+      mode: 'release',
+      language: 'English',
+      length: 'auto',
+      displayedAt: 1000,
+    });
+  });
+
+  it('restores an album batch from a session', () => {
+    const session: StoredSession = {
+      version: 1,
+      batches: [
+        {
+          kind: 'album',
+          title: 'Old Album',
+          tracks: ['One', 'Two'],
+          partial: false,
+          mode: 'release',
+          language: 'Japanese',
+          length: 'short',
+          displayedAt: 5,
+        },
+      ],
+      avoid: ['Old Album'],
+    };
+    const h = makeHarness({ sessionSeed: session });
+    const batch = h.store.getState().batches[0];
+    expect(batch).toMatchObject({ kind: 'album', title: 'Old Album', tracks: ['One', 'Two'], brief: null });
+    expect(h.store.getState().avoidNames).toEqual(['Old Album']);
+  });
+
+  it('replaces only the targeted track and pushes the new title into exclusions', async () => {
+    let call = 0;
+    const h = makeHarness({
+      submitImpl: async () => {
+        call += 1;
+        return call === 1
+          ? successAlbum('Album One', ['First', 'Second', 'Third'])
+          : successNames(['Replacement']);
+      },
+    });
+    h.store.setMode('release');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const before = albumBatch(h.store.getState());
+    h.store.replaceTrack(before.id, 1);
+    expect(h.submit).toHaveBeenCalledTimes(2);
+    expect(h.submit.mock.calls[1][0]).toEqual({
+      operation: 'replaceTrack',
+      mode: 'release',
+      albumTitle: 'Album One',
+      tracks: ['First', 'Third'],
+      brief: '',
+      language: 'English',
+      length: 'auto',
+      avoid: ['Album One', 'First', 'Second', 'Third'],
+    });
+
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const s = h.store.getState();
+    expect(s.batches).toHaveLength(1);
+    expect(s.batches[0]).toMatchObject({ kind: 'album', id: before.id, tracks: ['First', 'Replacement', 'Third'] });
+    expect(s.avoidNames).toEqual(['Album One', 'First', 'Second', 'Third', 'Replacement']);
+    expect(s.replacementError).toBeNull();
+    expect(storedNames(h.sessionWrites[h.sessionWrites.length - 1].batches[0])).toEqual([
+      'First',
+      'Replacement',
+      'Third',
+    ]);
+  });
+
+  it('keeps the old title and records the row error when a replacement fails', async () => {
+    let call = 0;
+    const h = makeHarness({
+      submitImpl: async () => {
+        call += 1;
+        if (call === 1) return successAlbum('Album One', ['First', 'Second']);
+        return { ok: false, code: 'UPSTREAM_ERROR', message: 'down', retryable: true };
+      },
+    });
+    h.store.setMode('release');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const batchId = albumBatch(h.store.getState()).id;
+    h.store.replaceTrack(batchId, 0);
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const s = h.store.getState();
+    expect(s.batches[0]).toMatchObject({ tracks: ['First', 'Second'] });
+    expect(s.replacementError).toEqual({ batchId, index: 0, message: 'down', retryable: true });
+    expect(s.error).toBeNull();
+    expect(s.avoidNames).toEqual(['Album One', 'First', 'Second']);
+  });
+
+  it('retryReplacement resubmits the identical snapshot', async () => {
+    let call = 0;
+    const h = makeHarness({
+      submitImpl: async () => {
+        call += 1;
+        if (call === 1) return successAlbum('Album One', ['First', 'Second']);
+        if (call === 2) return { ok: false, code: 'UNUSABLE_OUTPUT', message: 'empty', retryable: true };
+        return successNames(['Replacement']);
+      },
+    });
+    h.store.setMode('release');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    h.store.replaceTrack(albumBatch(h.store.getState()).id, 1);
+    await vi.waitFor(() => expect(h.store.getState().replacementError).not.toBeNull());
+    const failed = h.submit.mock.calls[1][0];
+    h.store.retryReplacement();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    expect(h.submit).toHaveBeenCalledTimes(3);
+    expect(h.submit.mock.calls[2][0]).toEqual(failed);
+    expect(h.store.getState().batches[0]).toMatchObject({ tracks: ['First', 'Replacement'] });
+    expect(h.store.getState().replacementError).toBeNull();
+  });
+
+  it('ignores a replacement while another request is in flight', async () => {
+    const d = deferred<WireOutcome>();
+    const h = makeHarness({
+      submitImpl: async () => {
+        return h.submit.mock.calls.length === 1 ? successAlbum('Album One', ['First', 'Second']) : d.promise;
+      },
+    });
+    h.store.setMode('release');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const batchId = albumBatch(h.store.getState()).id;
+    h.store.replaceTrack(batchId, 0);
+    expect(h.store.getState().pending).toMatchObject({ kind: 'replaceTrack', batchId, trackIndex: 0 });
+    h.store.replaceTrack(batchId, 1);
+    expect(h.submit).toHaveBeenCalledTimes(2);
+    d.resolve(successNames(['Late']));
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+  });
+
+  it('opening Explore on the album title carries the album; a track row does not', async () => {
+    const h = makeHarness({ submitImpl: async () => successAlbum('Album One', ['First', 'Second']) });
+    h.store.setMode('release');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const batch = albumBatch(h.store.getState());
+    h.store.openExplore('First', batch);
+    expect(h.store.getState().explore).toMatchObject({ seed: 'First', mode: 'release', album: null });
+    h.store.openExplore('Album One', batch);
+    expect(h.store.getState().explore?.album).toEqual({ title: 'Album One', tracks: ['First', 'Second'] });
+    expect(h.submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggles the whole album from the Explore sheet Save chip', async () => {
+    const h = makeHarness({ submitImpl: async () => successAlbum('Album One', ['First', 'Second']) });
+    h.store.setMode('release');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    h.store.openExplore('Album One', albumBatch(h.store.getState()));
+    h.store.toggleExploreSave();
+    const saved = h.store.getState().shortlist;
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ kind: 'album', title: 'Album One', tracks: ['First', 'Second'], mode: 'release' });
+    h.store.toggleExploreSave();
+    expect(h.store.getState().shortlist).toHaveLength(0);
+  });
+
+  it('clears a failed replacement with the working session but keeps the shortlist', async () => {
+    let call = 0;
+    const h = makeHarness({
+      submitImpl: async () => {
+        call += 1;
+        if (call === 1) return successAlbum('Album One', ['First']);
+        return { ok: false, code: 'UPSTREAM_ERROR', message: 'down', retryable: true };
+      },
+    });
+    h.store.setMode('release');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    const batch = albumBatch(h.store.getState());
+    h.store.toggleSaveAlbum(batch);
+    h.store.replaceTrack(batch.id, 0);
+    await vi.waitFor(() => expect(h.store.getState().replacementError).not.toBeNull());
+    h.store.clearWorkingSession();
+    const s = h.store.getState();
+    expect(s.replacementError).toBeNull();
+    expect(s.batches).toHaveLength(0);
+    expect(s.shortlist).toHaveLength(1);
+  });
+});
+
 describe('stale and cleared responses', () => {
   it('cleared work cannot reappear through a late response', async () => {
     const d = deferred<WireOutcome>();
@@ -234,7 +494,7 @@ describe('stale and cleared responses', () => {
     expect(h.submit).toHaveBeenCalledTimes(2);
     second.resolve(successNames(['Fresh']));
     await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
-    expect(h.store.getState().batches[0].names).toEqual(['Fresh']);
+    expect(batchNames(h.store.getState().batches[0])).toEqual(['Fresh']);
     expect(h.store.getState().batches[0].brief).toBe('fresh');
     expect(h.store.getState().requestActive).toBe(false);
   });
@@ -266,7 +526,7 @@ describe('stale and cleared responses', () => {
     expect(s.pending).toBeNull();
     // The abandoned refinement is not resurrected into the recovery list.
     expect(s.batches).toHaveLength(1);
-    expect(s.batches[0].names).toEqual(['Base', 'Idea']);
+    expect(batchNames(s.batches[0])).toEqual(['Base', 'Idea']);
 
     // Settlement released the transport lock; a new generate is now allowed.
     h.store.generate();
@@ -318,8 +578,8 @@ describe('Explore (local) and refine', () => {
     // The completed refinement also entered the bounded recovery list, so it
     // survives closing the sheet and further exploration.
     expect(s.batches).toHaveLength(2);
-    expect(s.batches[0].names).toEqual(['Base', 'Idea']);
-    expect(s.batches[1].names).toEqual(['Derived A', 'Derived B', 'Derived C', 'Derived D']);
+    expect(batchNames(s.batches[0])).toEqual(['Base', 'Idea']);
+    expect(batchNames(s.batches[1])).toEqual(['Derived A', 'Derived B', 'Derived C', 'Derived D']);
     expect(s.viewIndex).toBe(1);
     expect(s.batches[1].brief).toBe('');
     expect(s.batches[1].partial).toBe(true);
@@ -329,13 +589,13 @@ describe('Explore (local) and refine', () => {
     h.store.closeExplore();
     const afterClose = h.store.getState();
     expect(afterClose.explore).toBeNull();
-    expect(afterClose.batches[afterClose.viewIndex].names[0]).toBe('Derived A');
+    expect(batchNames(afterClose.batches[afterClose.viewIndex])[0]).toBe('Derived A');
     h.store.setViewIndex(0);
-    expect(h.store.getState().batches[0].names).toEqual(['Base', 'Idea']);
+    expect(batchNames(h.store.getState().batches[0])).toEqual(['Base', 'Idea']);
 
     // Persisted session carries the refined batch metadata but no raw context.
     const lastSession = h.sessionWrites[h.sessionWrites.length - 1];
-    expect(lastSession.batches.map((b) => b.names[0])).toEqual(['Base', 'Derived A']);
+    expect(lastSession.batches.map((b) => storedNames(b)[0])).toEqual(['Base', 'Derived A']);
     expect(JSON.stringify(lastSession)).not.toContain('shorter');
     expect(JSON.stringify(lastSession)).not.toContain('un disque');
   });
@@ -346,7 +606,7 @@ describe('Explore (local) and refine', () => {
     h.store.setLength('short');
     h.store.toggleSave('Golden Gate', 'artist');
     const before = h.submit.mock.calls.length;
-    h.store.openSavedExplore('Golden Gate', 'artist');
+    h.store.openSavedExplore(h.store.getState().shortlist[0]);
     expect(h.submit).toHaveBeenCalledTimes(before); // local only
     const s = h.store.getState();
     expect(s.explore?.seed).toBe('Golden Gate');
@@ -354,6 +614,7 @@ describe('Explore (local) and refine', () => {
     expect(s.explore?.language).toBe('Japanese');
     expect(s.explore?.length).toBe('short');
     expect(s.explore?.brief).toBeNull();
+    expect(s.explore?.album).toBeNull();
     expect(s.pending).toBeNull();
 
     // Refinement from a saved name uses its mode and the current preferences,
@@ -374,6 +635,20 @@ describe('Explore (local) and refine', () => {
       seed: 'Golden Gate',
       brief: 'gate at golden hour',
     });
+  });
+
+  it('explores a saved album entry locally with its tracks', async () => {
+    const h = makeHarness({ submitImpl: async () => successAlbum('Album One', ['First', 'Second']) });
+    h.store.setMode('release');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    h.store.toggleSaveAlbum(albumBatch(h.store.getState()));
+    const before = h.submit.mock.calls.length;
+    h.store.openSavedExplore(h.store.getState().shortlist[0]);
+    expect(h.submit).toHaveBeenCalledTimes(before);
+    const explore = h.store.getState().explore;
+    expect(explore).toMatchObject({ seed: 'Album One', mode: 'release', brief: null });
+    expect(explore?.album).toEqual({ title: 'Album One', tracks: ['First', 'Second'] });
   });
 
   it('restored batches have no brief and refine uses the added context', async () => {
@@ -434,8 +709,58 @@ describe('alias operation', () => {
     await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
     const s = h.store.getState();
     expect(s.batches).toHaveLength(1);
-    expect(s.batches[0].names).toEqual(['Iron Raven', 'Sable Oracle']);
+    expect(batchNames(s.batches[0])).toEqual(['Iron Raven', 'Sable Oracle']);
     expect(s.batches[0].mode).toBe('artist');
+  });
+
+  it('routes the main generate action to the selected alias persona', async () => {
+    const h = makeHarness({ submitImpl: async () => successNames(['Wilted Crown']) });
+    h.store.setMode('artist');
+    h.store.setBrief('late buses');
+    h.store.setAliasStyle('emo');
+    expect(h.prefsWrites).toContainEqual({
+      version: 1,
+      language: 'English',
+      length: 'auto',
+      aliasStyle: 'emo',
+    });
+    h.store.generate();
+    // Artist mode never sends a generate operation, and never a length hint.
+    expect(h.submit.mock.calls[0][0]).toEqual({
+      operation: 'alias',
+      mode: 'artist',
+      aliasStyle: 'emo',
+      brief: 'late buses',
+      language: 'English',
+      avoid: [],
+    });
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    expect(h.store.getState().batches[0]).toMatchObject({ kind: 'names', mode: 'artist' });
+  });
+
+  it('keeps an alias batch through a session round-trip', async () => {
+    vi.stubGlobal('window', { sessionStorage: memoryStorage() });
+    const h = makeHarness({
+      submitImpl: async () => successNames(['Iron Raven', 'Sable Oracle']),
+      persistSessionImpl: (session) => storage.persistSession(session),
+    });
+    h.store.setLanguage('Japanese');
+    h.store.setMode('artist');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    expect(h.submit.mock.calls[0][0]).toMatchObject({ operation: 'alias', mode: 'artist', language: 'Japanese' });
+
+    // Reload through the real loader: an alias batch used to be rejected here
+    // because its stored batch language was empty.
+    const reloaded = makeHarness({ loadSessionImpl: () => storage.loadSession() });
+    const restored = reloaded.store.getState();
+    expect(restored.batches).toHaveLength(1);
+    expect(restored.batches[0]).toMatchObject({
+      kind: 'names',
+      mode: 'artist',
+      language: 'Japanese',
+      names: ['Iron Raven', 'Sable Oracle'],
+    });
   });
 });
 
@@ -492,8 +817,40 @@ describe('shortlist', () => {
     expect(h.store.getState().shortlist).toHaveLength(1);
   });
 
+  it('saves a whole album as exactly one entry and copies it with numbered tracks', async () => {
+    const copied: string[] = [];
+    const h = makeHarness({
+      submitImpl: async () => successAlbum('Album One', ['First', 'Second']),
+      copyImpl: async (text) => {
+        copied.push(text);
+        return true;
+      },
+    });
+    h.store.setMode('release');
+    h.store.generate();
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    h.store.toggleSaveAlbum(albumBatch(h.store.getState()));
+    expect(h.store.getState().shortlist).toHaveLength(1);
+    expect(h.store.getState().shortlist[0]).toMatchObject({
+      kind: 'album',
+      title: 'Album One',
+      tracks: ['First', 'Second'],
+      mode: 'release',
+    });
+    // Saving the album title from a row toggles that same entry.
+    h.store.toggleSave('Album One', 'release');
+    expect(h.store.getState().shortlist).toHaveLength(0);
+
+    h.store.toggleSaveAlbum(albumBatch(h.store.getState()));
+    h.store.toggleSave('Solo Name', 'track');
+    await h.store.copyShortlist();
+    // Entries are separated by a blank line; an album copies its title first.
+    expect(copied[copied.length - 1]).toBe('Album One\n1. First\n2. Second\n\nSolo Name');
+  });
+
   it('never silently evicts beyond 300 entries', async () => {
     const seeded = Array.from({ length: 300 }, (_, i) => ({
+      kind: 'name' as const,
       id: `s${i}`,
       name: `Name ${i}`,
       mode: 'track' as const,
@@ -501,6 +858,22 @@ describe('shortlist', () => {
     }));
     const h = makeHarness({ shortlistSeed: seeded });
     h.store.toggleSave('Name 301', 'track');
+    const s = h.store.getState();
+    expect(s.shortlist).toHaveLength(300);
+    expect(s.toast?.message).toContain('Shortlist is full');
+  });
+
+  it('never silently evicts albums beyond 300 entries either', async () => {
+    const seeded = Array.from({ length: 300 }, (_, i) => ({
+      kind: 'album' as const,
+      id: `s${i}`,
+      title: `Album ${i}`,
+      tracks: [`Track ${i}`],
+      mode: 'release' as const,
+      savedAt: i,
+    }));
+    const h = makeHarness({ shortlistSeed: seeded });
+    h.store.toggleSaveAlbum({ title: 'Album 301', tracks: ['Track 301'] });
     const s = h.store.getState();
     expect(s.shortlist).toHaveLength(300);
     expect(s.toast?.message).toContain('Shortlist is full');
@@ -530,6 +903,7 @@ describe('working session controls', () => {
     expect(s.briefByMode.track).toBe('');
     expect(s.avoidNames).toHaveLength(0);
     expect(s.error).toBeNull();
+    expect(s.replacementError).toBeNull();
     expect(s.shortlist).toHaveLength(shortlistBefore);
   });
 
@@ -544,7 +918,7 @@ describe('working session controls', () => {
     };
     const h = makeHarness({ sessionSeed: session });
     const s = h.store.getState();
-    expect(s.batches.map((b) => b.names[0])).toEqual(['Old', 'Newer']);
+    expect(s.batches.map((b) => batchNames(b)[0])).toEqual(['Old', 'Newer']);
     expect(s.viewIndex).toBe(1);
     expect(s.avoidNames).toEqual(['Old']);
     expect(s.pending).toBeNull();

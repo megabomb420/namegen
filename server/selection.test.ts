@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectNames, type SelectionInput } from './selection';
+import { selectAlbum, selectNames, type AlbumSelectionInput, type SelectionInput } from './selection';
 import type { NormalizedRequest } from '../shared/contracts';
 
 function request(overrides: Partial<NormalizedRequest> = {}): NormalizedRequest {
@@ -27,6 +27,21 @@ function select(content: string, input: Partial<SelectionInput> = {}) {
 }
 
 const names = (n: string[]) => JSON.stringify({ names: n });
+
+const album = (title: unknown, tracks: unknown) => JSON.stringify({ title, tracks });
+
+/** Track titles "Track 1"…"Track n" — distinct, valid and easy to count. */
+const trackList = (n: number) => Array.from({ length: n }, (_, i) => `Track ${i + 1}`);
+
+function selectRelease(content: string, input: Partial<AlbumSelectionInput> = {}) {
+  return selectAlbum({
+    content,
+    requestedTracks: 12,
+    displayTracks: 10,
+    request: request({ operation: 'generate', mode: 'release' }),
+    ...input,
+  });
+}
 
 describe('selectNames', () => {
   it('keeps valid names in provider order and hides the surplus', () => {
@@ -135,5 +150,124 @@ describe('selectNames', () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.names).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('selectAlbum', () => {
+  it('keeps the title and the first ten tracks from a full album', () => {
+    const outcome = selectRelease(album('Tide Book', trackList(12)));
+    expect(outcome).toMatchObject({ ok: true, partial: false });
+    if (!outcome.ok) return;
+    expect(outcome.title).toBe('Tide Book');
+    expect(outcome.tracks).toEqual(trackList(10));
+    expect(outcome.stats).toMatchObject({ received: 12, invalid: 0, duplicates: 0, excluded: 0, valid: 12 });
+  });
+
+  it('flags a partial album below the display target and not at exactly ten', () => {
+    const nine = selectRelease(album('Tide Book', trackList(9)));
+    expect(nine.ok).toBe(true);
+    if (!nine.ok) return;
+    expect(nine.tracks).toHaveLength(9);
+    expect(nine.partial).toBe(true);
+
+    const ten = selectRelease(album('Tide Book', trackList(10)));
+    expect(ten.ok).toBe(true);
+    if (!ten.ok) return;
+    expect(ten.tracks).toHaveLength(10);
+    expect(ten.partial).toBe(false);
+  });
+
+  it('rejects any shape that is not exactly title plus tracks', () => {
+    expect(selectRelease(JSON.stringify({ title: 'Tide Book', tracks: ['A'], extra: 1 }))).toMatchObject({
+      ok: false,
+      reason: 'wrong-shape',
+    });
+    expect(selectRelease(JSON.stringify({ title: 'Tide Book', tracks: 'A' }))).toMatchObject({
+      ok: false,
+      reason: 'wrong-shape',
+    });
+    expect(selectRelease(JSON.stringify({ tracks: ['A'] }))).toMatchObject({ ok: false, reason: 'wrong-shape' });
+    expect(selectRelease(JSON.stringify({ title: 'Tide Book' }))).toMatchObject({ ok: false, reason: 'wrong-shape' });
+    // Not an object at all.
+    expect(selectRelease(JSON.stringify(['Tide Book', 'A']))).toMatchObject({ ok: false, reason: 'wrong-shape' });
+    expect(selectRelease('"Tide Book"')).toMatchObject({ ok: false, reason: 'wrong-shape' });
+    expect(selectRelease('null')).toMatchObject({ ok: false, reason: 'wrong-shape' });
+    // Generate asks for 12 tracks; 13 is rejected wholesale.
+    expect(selectRelease(album('Tide Book', trackList(13)))).toMatchObject({ ok: false, reason: 'wrong-shape' });
+  });
+
+  it('rejects an unusable title rather than dropping it', () => {
+    expect(selectRelease(album(42, ['A']))).toMatchObject({ ok: false, reason: 'wrong-shape' });
+    expect(selectRelease(album('   ', ['A']))).toMatchObject({ ok: false, reason: 'wrong-shape' });
+    expect(selectRelease(album('x'.repeat(61), ['A']))).toMatchObject({ ok: false, reason: 'wrong-shape' });
+    expect(selectRelease(album('bad\u0000title', ['A']))).toMatchObject({ ok: false, reason: 'wrong-shape' });
+  });
+
+  it('rejects non-JSON content', () => {
+    expect(selectRelease('{"title": "Tide Book", "tracks": ["Cut')).toMatchObject({ ok: false, reason: 'not-json' });
+    expect(selectRelease('not json at all')).toMatchObject({ ok: false, reason: 'not-json' });
+    expect(selectRelease('')).toMatchObject({ ok: false, reason: 'not-json' });
+  });
+
+  it('deduplicates tracks against the title and against each other', () => {
+    const outcome = selectRelease(
+      album('Tide Book', ['Harbor Lights', 'HARBOR LIGHTS', '  Tide   Book  ', 'Salt Air', 'Salt Air']),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.tracks).toEqual(['Harbor Lights', 'Salt Air']);
+    expect(outcome.stats).toMatchObject({ received: 5, invalid: 0, duplicates: 3, excluded: 0, valid: 2 });
+  });
+
+  it('removes tracks matching the avoid list', () => {
+    const outcome = selectRelease(album('Tide Book', ['Harbor Lights', 'Salt Air', 'Last Ferry']), {
+      request: request({ operation: 'generate', mode: 'release', avoid: ['Salt Air'] }),
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.tracks).toEqual(['Harbor Lights', 'Last Ferry']);
+    expect(outcome.stats).toMatchObject({ excluded: 1, valid: 2 });
+  });
+
+  it('drops invalid tracks and applies the 60-code-point limit', () => {
+    const emoji = '🎵'.repeat(60);
+    const outcome = selectRelease(album('Tide Book', ['Good', 42, '   ', 'x'.repeat(61), 'bad\u0007name', emoji]));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.tracks).toEqual(['Good', emoji]);
+    expect(outcome.stats).toMatchObject({ received: 6, invalid: 4, valid: 2 });
+  });
+
+  it('reports an empty album when nothing usable remains', () => {
+    expect(selectRelease(album('Tide Book', []))).toMatchObject({ ok: false, reason: 'empty' });
+    expect(selectRelease(album('Tide Book', ['   ', 42]))).toMatchObject({ ok: false, reason: 'empty' });
+    expect(selectRelease(album('Tide Book', ['Tide Book', '  tide   book  ']))).toMatchObject({
+      ok: false,
+      reason: 'empty',
+    });
+    const allAvoided = selectRelease(album('Tide Book', ['Salt Air']), {
+      request: request({ operation: 'generate', mode: 'release', avoid: ['Salt Air'] }),
+    });
+    expect(allAvoided).toMatchObject({ ok: false, reason: 'empty' });
+  });
+
+  it('counts received, invalid, duplicate, excluded and valid tracks', () => {
+    const outcome = selectRelease(
+      album('  Tide  Book ', [
+        'Harbor Lights',
+        'hArbor   lights',
+        'x'.repeat(61),
+        'Salt Air',
+        'Salt Air',
+        'Tide Book',
+        'Last Ferry',
+      ]),
+      { request: request({ operation: 'generate', mode: 'release', avoid: ['Last Ferry'] }) },
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.title).toBe('Tide Book');
+    expect(outcome.tracks).toEqual(['Harbor Lights', 'Salt Air']);
+    expect(outcome.stats).toEqual({ received: 7, invalid: 1, duplicates: 3, excluded: 1, valid: 2 });
   });
 });

@@ -281,6 +281,9 @@ async function handleGenerate(request: Request, env: WorkerEnv, log: LogFn): Pro
     }
     return response;
   }
+  if (result.kind === 'album') {
+    return json({ album: { title: result.title, tracks: result.tracks }, partial: result.partial }, 200);
+  }
   return json({ names: result.names, partial: result.partial }, 200);
 }
 

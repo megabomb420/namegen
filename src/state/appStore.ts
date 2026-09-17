@@ -8,16 +8,24 @@
 import type { AliasStyle, LengthPref, Mode, NamingRequest } from '../../shared/contracts';
 import { BRIEF_MAX, LANGUAGE_MAX } from '../../shared/limits';
 import { countCodePoints } from '../../shared/text';
-import type { WireOutcome } from '../browser/api';
-import type { StoredPrefs, StoredSession } from '../browser/storage';
-import { findSaved, pushAvoidNames, pushBatch } from './helpers';
-import type { AppError, AppState, DisplayBatch, ExploreState, PendingRequest, SavedName, Tab } from './types';
+import { UNREADABLE_OUTPUT_MESSAGE, type WireOutcome } from '../browser/api';
+import type { StoredBatch, StoredPrefs, StoredSession } from '../browser/storage';
+import { entryTitle, findSaved, formatEntry, pushAvoidNames, pushBatch } from './helpers';
+import type {
+  AppError,
+  AppState,
+  DisplayBatch,
+  ExploreState,
+  PendingRequest,
+  SavedEntry,
+  Tab,
+} from './types';
 import { SESSION_BATCH_LIMIT } from './types';
 
 export interface StoreDeps {
   submit: (request: NamingRequest) => Promise<WireOutcome>;
-  loadShortlist: () => SavedName[];
-  persistShortlist: (items: SavedName[]) => boolean;
+  loadShortlist: () => SavedEntry[];
+  persistShortlist: (items: SavedEntry[]) => boolean;
   loadPrefs: () => StoredPrefs | null;
   persistPrefs: (prefs: StoredPrefs) => boolean;
   loadSession: () => StoredSession | null;
@@ -29,7 +37,14 @@ export interface StoreDeps {
   later: (fn: () => void, ms: number) => unknown;
 }
 
-const DEFAULT_PREFS = { language: 'English', length: 'auto' as LengthPref };
+const DEFAULT_PREFS = { language: 'English', length: 'auto' as LengthPref, aliasStyle: 'wu' as AliasStyle };
+
+/** A replacement target plus the exact snapshot to resubmit if it fails. */
+interface ReplacementRetry {
+  batchId: string;
+  index: number;
+  snapshot: NamingRequest;
+}
 
 type Listener = () => void;
 
@@ -37,8 +52,50 @@ function defaultPrefs(): StoredPrefs {
   return { version: 1, ...DEFAULT_PREFS };
 }
 
-function displayToStored(batch: DisplayBatch): StoredSession['batches'][number] {
+/** Restores one stored batch. Raw briefs are memory-only; a restore has none. */
+function restoreBatch(batch: StoredBatch, id: string): DisplayBatch {
+  if (batch.kind === 'album') {
+    return {
+      kind: 'album',
+      id,
+      title: batch.title,
+      tracks: batch.tracks,
+      partial: batch.partial,
+      mode: 'release',
+      language: batch.language,
+      length: batch.length,
+      brief: null,
+      displayedAt: batch.displayedAt,
+    };
+  }
   return {
+    kind: 'names',
+    id,
+    names: batch.names,
+    partial: batch.partial,
+    mode: batch.mode,
+    language: batch.language,
+    length: batch.length,
+    brief: null,
+    displayedAt: batch.displayedAt,
+  };
+}
+
+function displayToStored(batch: DisplayBatch): StoredBatch {
+  if (batch.kind === 'album') {
+    return {
+      kind: 'album',
+      title: batch.title,
+      tracks: batch.tracks,
+      partial: batch.partial,
+      mode: 'release',
+      language: batch.language,
+      length: batch.length,
+      displayedAt: batch.displayedAt,
+    };
+  }
+  return {
+    kind: 'names',
     names: batch.names,
     partial: batch.partial,
     mode: batch.mode,
@@ -48,34 +105,31 @@ function displayToStored(batch: DisplayBatch): StoredSession['batches'][number] 
   };
 }
 
+/** Albums and their track titles are all sent as exclusions. */
+function batchAvoidNames(outcome: Extract<WireOutcome, { ok: true }>): string[] {
+  return outcome.kind === 'album' ? [outcome.title, ...outcome.tracks] : outcome.names;
+}
+
 export class AppStore {
   private state: AppState;
   private listeners = new Set<Listener>();
   private toastSeq = 0;
+  /** Exact snapshot of the last failed replacement, for explicit retry only. */
+  private replacementRetry: ReplacementRetry | null = null;
 
   constructor(private deps: StoreDeps) {
     const prefs = deps.loadPrefs();
     const savedPrefs = prefs ?? defaultPrefs();
     const shortlist = deps.loadShortlist();
     const session = deps.loadSession();
-    const batches = (session?.batches ?? []).map(
-      (b): DisplayBatch => ({
-        id: deps.randomId(),
-        names: b.names,
-        partial: b.partial,
-        mode: b.mode,
-        language: b.language,
-        length: b.length,
-        brief: null, // Raw briefs are memory-only; a restore has none.
-        displayedAt: b.displayedAt,
-      }),
-    );
+    const batches = (session?.batches ?? []).map((batch) => restoreBatch(batch, deps.randomId()));
     this.state = {
       tab: 'create',
       mode: 'track',
       briefByMode: { track: '', release: '', artist: '' },
       language: savedPrefs.language,
       length: savedPrefs.length,
+      aliasStyle: savedPrefs.aliasStyle ?? 'wu',
       optionsOpen: false,
       batches,
       viewIndex: Math.max(0, batches.length - 1),
@@ -83,6 +137,7 @@ export class AppStore {
       pending: null,
       error: null,
       errorSnapshot: null,
+      replacementError: null,
       explore: null,
       shortlist,
       sessionUnavailable: false,
@@ -129,14 +184,24 @@ export class AppStore {
     const trimmed = language.trim();
     const persistable = trimmed !== '' && countCodePoints(trimmed) <= LANGUAGE_MAX;
     if (persistable) {
-      this.deps.persistPrefs({ version: 1, language: trimmed, length: this.state.length });
+      this.persistPrefs({ language: trimmed, length: this.state.length, aliasStyle: this.state.aliasStyle });
     }
     this.set({ language });
   }
 
   setLength(length: LengthPref): void {
-    this.deps.persistPrefs({ version: 1, language: this.state.language, length });
+    this.persistPrefs({ language: this.state.language, length, aliasStyle: this.state.aliasStyle });
     this.set({ length });
+  }
+
+  /** Alias persona for artist mode; remembered across visits. */
+  setAliasStyle(style: AliasStyle): void {
+    this.persistPrefs({ language: this.state.language, length: this.state.length, aliasStyle: style });
+    this.set({ aliasStyle: style });
+  }
+
+  private persistPrefs(prefs: Omit<StoredPrefs, 'version'>): boolean {
+    return this.deps.persistPrefs({ version: 1, ...prefs });
   }
 
   toggleOptions(): void {
@@ -173,6 +238,7 @@ export class AppStore {
     return null;
   }
 
+  /** Active-mode submit: track/release generate, or an artist alias roll. */
   generate(): void {
     const s = this.state;
     if (s.pending !== null) return;
@@ -193,15 +259,27 @@ export class AppStore {
       });
       return;
     }
-    const snapshot: NamingRequest = {
-      operation: 'generate',
-      mode: s.mode,
-      brief: brief.trim(),
-      language: trimmedLanguage,
-      length: s.length,
-      avoid: [...s.avoidNames],
-    };
-    void this.runRequest(snapshot, 'generate');
+    // Artist mode always rolls the selected alias persona; release mode asks
+    // for one album instead of a flat list.
+    const snapshot: NamingRequest =
+      s.mode === 'artist'
+        ? {
+            operation: 'alias',
+            mode: 'artist',
+            aliasStyle: s.aliasStyle,
+            brief: brief.trim(),
+            language: trimmedLanguage,
+            avoid: [...s.avoidNames],
+          }
+        : {
+            operation: 'generate',
+            mode: s.mode,
+            brief: brief.trim(),
+            language: trimmedLanguage,
+            length: s.length,
+            avoid: [...s.avoidNames],
+          };
+    void this.runRequest(snapshot, s.mode === 'artist' ? 'alias' : 'generate');
   }
 
   retryFailedRequest(): void {
@@ -216,14 +294,42 @@ export class AppStore {
     const s = this.state;
     if (s.requestActive || s.pending !== null) return;
     const brief = s.briefByMode.artist;
+    const language = s.language.trim();
     const snapshot: NamingRequest = {
       operation: 'alias',
       mode: 'artist',
       aliasStyle: style,
       ...(brief.trim() === '' ? {} : { brief: brief.trim() }),
+      ...(language === '' ? {} : { language }),
       avoid: [...s.avoidNames],
     };
     void this.runRequest(snapshot, 'alias');
+  }
+
+  /** One new title for a single album slot; the old title stays until it lands. */
+  replaceTrack(batchId: string, index: number): void {
+    const s = this.state;
+    if (s.requestActive || s.pending !== null) return;
+    const batch = s.batches.find((candidate) => candidate.id === batchId);
+    if (batch === undefined || batch.kind !== 'album' || batch.tracks[index] === undefined) return;
+    const snapshot: NamingRequest = {
+      operation: 'replaceTrack',
+      mode: 'release',
+      albumTitle: batch.title,
+      tracks: batch.tracks.filter((_track, position) => position !== index),
+      brief: batch.brief ?? '',
+      language: batch.language,
+      length: batch.length,
+      avoid: [...s.avoidNames],
+    };
+    void this.runRequest(snapshot, 'replaceTrack', { batchId, trackIndex: index });
+  }
+
+  /** Resubmits the exact failed replacement snapshot; never automatic. */
+  retryReplacement(): void {
+    const retry = this.replacementRetry;
+    if (retry === null || this.state.requestActive || this.state.pending !== null) return;
+    void this.runRequest(retry.snapshot, 'replaceTrack', { batchId: retry.batchId, trackIndex: retry.index });
   }
 
   retryExplore(): void {
@@ -232,20 +338,24 @@ export class AppStore {
     void this.runRequest(snapshot, 'refine');
   }
 
-  private async runRequest(snapshot: NamingRequest, kind: 'generate' | 'refine' | 'alias'): Promise<void> {
+  private async runRequest(
+    snapshot: NamingRequest,
+    kind: PendingRequest['kind'],
+    target?: { batchId: string; trackIndex: number },
+  ): Promise<void> {
     // Transport admission: locked from submission until settlement, so work
     // invalidated mid-flight (closing Explore, clearing the session) can never
     // permit a second concurrent paid request.
     if (this.state.requestActive || this.state.pending !== null) return;
     const epoch = this.state.epoch + 1;
-    const pending: PendingRequest = { kind, epoch };
+    const pending: PendingRequest = { kind, epoch, ...(target ?? {}) };
     const base: Partial<AppState> = { epoch, requestActive: true, pending, error: null, errorSnapshot: null };
-    if (kind === 'generate' || kind === 'alias') {
-      this.set(base);
-    } else {
+    if (kind === 'refine') {
       const explore = this.state.explore;
       if (explore === null) return;
       this.set({ ...base, explore: { ...explore, loading: true, error: null } });
+    } else {
+      this.set(base);
     }
 
     try {
@@ -257,8 +367,10 @@ export class AppStore {
 
       if (!outcome.ok) {
         const error: AppError = { code: outcome.code, message: outcome.message, retryable: outcome.retryable };
-        if (kind === 'generate') {
+        if (kind === 'generate' || kind === 'alias') {
           this.set({ pending: null, error, errorSnapshot: snapshot });
+        } else if (kind === 'replaceTrack') {
+          this.failReplacement(target, snapshot, error);
         } else {
           const explore = this.state.explore;
           if (explore === null) return;
@@ -268,27 +380,81 @@ export class AppStore {
       }
 
       if (kind === 'generate' || kind === 'alias') {
-        const batch: DisplayBatch = {
-          id: this.deps.randomId(),
-          names: outcome.names,
-          partial: outcome.partial,
-          mode: snapshot.mode,
-          language: snapshot.language ?? '',
-          length: snapshot.length ?? 'auto',
-          brief: snapshot.brief ?? '',
-          displayedAt: this.deps.now(),
-        };
+        // The batch language falls back to the current preference: an alias
+        // snapshot may omit it, and an empty language would make the stored
+        // session unreadable on the next reload.
+        const language = (snapshot.language ?? this.state.language).trim();
+        const length = snapshot.length ?? 'auto';
+        const brief = snapshot.brief ?? '';
+        const batch: DisplayBatch =
+          outcome.kind === 'album'
+            ? {
+                kind: 'album',
+                id: this.deps.randomId(),
+                title: outcome.title,
+                tracks: outcome.tracks,
+                partial: outcome.partial,
+                mode: 'release',
+                language,
+                length,
+                brief,
+                displayedAt: this.deps.now(),
+              }
+            : {
+                kind: 'names',
+                id: this.deps.randomId(),
+                names: outcome.names,
+                partial: outcome.partial,
+                mode: snapshot.mode,
+                language,
+                length,
+                brief,
+                displayedAt: this.deps.now(),
+              };
         const batches = pushBatch(this.state.batches, batch, SESSION_BATCH_LIMIT);
-        const avoidNames = pushAvoidNames(this.state.avoidNames, outcome.names);
-        const next: Partial<AppState> = {
+        const avoidNames = pushAvoidNames(this.state.avoidNames, batchAvoidNames(outcome));
+        this.set({
           pending: null,
           error: null,
           errorSnapshot: null,
           batches,
           viewIndex: batches.length - 1,
           avoidNames,
-        };
-        this.set(next);
+        });
+        this.persistCurrentSession();
+        return;
+      }
+
+      if (kind === 'replaceTrack') {
+        if (target === undefined || outcome.kind !== 'names' || outcome.names.length === 0) {
+          this.failReplacement(target, snapshot, {
+            code: 'UNUSABLE_OUTPUT',
+            message: UNREADABLE_OUTPUT_MESSAGE,
+            retryable: true,
+          });
+          return;
+        }
+        const newTitle = outcome.names[0];
+        const batch = this.state.batches.find((candidate) => candidate.id === target.batchId);
+        if (batch === undefined || batch.kind !== 'album' || batch.tracks[target.trackIndex] === undefined) {
+          // The batch or the slot is gone; nothing to replace.
+          this.set({ pending: null });
+          return;
+        }
+        const tracks = batch.tracks.map((track, position) => (position === target.trackIndex ? newTitle : track));
+        const batches = this.state.batches.map((candidate) =>
+          candidate.id === batch.id ? { ...batch, tracks } : candidate,
+        );
+        const avoidNames = pushAvoidNames(this.state.avoidNames, [newTitle]);
+        this.replacementRetry = null;
+        this.set({
+          pending: null,
+          error: null,
+          errorSnapshot: null,
+          batches,
+          avoidNames,
+          replacementError: null,
+        });
         this.persistCurrentSession();
         return;
       }
@@ -298,13 +464,26 @@ export class AppStore {
       // further exploration) never discards it. Raw context is not persisted.
       const explore = this.state.explore;
       if (explore === null || explore.seed !== snapshot.seed) return;
+      if (outcome.kind !== 'names') {
+        this.set({
+          pending: null,
+          explore: {
+            ...explore,
+            loading: false,
+            error: { code: 'UNUSABLE_OUTPUT', message: UNREADABLE_OUTPUT_MESSAGE, retryable: true },
+            retrySnapshot: snapshot,
+          },
+        });
+        return;
+      }
       const refineBatch: DisplayBatch = {
+        kind: 'names',
         id: this.deps.randomId(),
         names: outcome.names,
         partial: outcome.partial,
         mode: snapshot.mode,
-        language: snapshot.language ?? '',
-        length: snapshot.length ?? 'auto',
+        language: snapshot.language ?? explore.language,
+        length: snapshot.length ?? explore.length,
         brief: snapshot.brief ?? '',
         displayedAt: this.deps.now(),
       };
@@ -336,6 +515,25 @@ export class AppStore {
     }
   }
 
+  /** Records a failed replacement for its row; the old title is untouched. */
+  private failReplacement(
+    target: { batchId: string; trackIndex: number } | undefined,
+    snapshot: NamingRequest,
+    error: AppError,
+  ): void {
+    if (target === undefined) return;
+    this.replacementRetry = { batchId: target.batchId, index: target.trackIndex, snapshot };
+    this.set({
+      pending: null,
+      replacementError: {
+        batchId: target.batchId,
+        index: target.trackIndex,
+        message: error.message,
+        retryable: error.retryable,
+      },
+    });
+  }
+
   private persistCurrentSession(): void {
     const ok = this.deps.persistSession({
       version: 1,
@@ -350,6 +548,7 @@ export class AppStore {
   // ----- Explore (local) --------------------------------------------------
 
   openExplore(seed: string, batch: DisplayBatch): void {
+    const isAlbumTitle = batch.kind === 'album' && seed === batch.title;
     const explore: ExploreState = {
       seed,
       mode: batch.mode,
@@ -363,19 +562,21 @@ export class AppStore {
       retrySnapshot: null,
       alternatives: [],
       partial: null,
+      album: isAlbumTitle && batch.kind === 'album' ? { title: batch.title, tracks: [...batch.tracks] } : null,
     };
     this.set({ explore });
   }
 
   /**
-   * Explore from a saved shortlist name: it keeps its saved mode and uses the
+   * Explore from a saved shortlist entry: it keeps its saved mode and uses the
    * current language/length preferences; no originating brief exists, so the
    * sheet offers its bounded context field. Entirely local, never a request.
+   * An album entry carries its tracks so the Save chip toggles the release.
    */
-  openSavedExplore(name: string, mode: Mode): void {
+  openSavedExplore(entry: SavedEntry): void {
     const explore: ExploreState = {
-      seed: name,
-      mode,
+      seed: entryTitle(entry),
+      mode: entry.mode,
       language: this.state.language,
       length: this.state.length,
       brief: null,
@@ -386,6 +587,7 @@ export class AppStore {
       retrySnapshot: null,
       alternatives: [],
       partial: null,
+      album: entry.kind === 'album' ? { title: entry.title, tracks: [...entry.tracks] } : null,
     };
     this.set({ explore });
   }
@@ -429,6 +631,7 @@ export class AppStore {
         retrySnapshot: null,
         alternatives: [],
         partial: null,
+        album: null,
       },
     });
   }
@@ -447,6 +650,7 @@ export class AppStore {
 
   /** Clears session records, in-memory drafts/results and pending work. */
   clearWorkingSession(): void {
+    this.replacementRetry = null;
     this.set({
       epoch: this.state.epoch + 1,
       pending: null,
@@ -457,6 +661,7 @@ export class AppStore {
       explore: null,
       error: null,
       errorSnapshot: null,
+      replacementError: null,
     });
     // requestActive intentionally stays set: the transport lock remains held
     // until the in-flight request settles, even though its work is invalidated.
@@ -487,8 +692,46 @@ export class AppStore {
       this.showToast('Shortlist is full (300 names). Remove some first — nothing was saved.');
       return;
     }
-    const saved: SavedName = { id: this.deps.randomId(), name, mode, savedAt: this.deps.now() };
-    const next = [...items, saved];
+    const saved: SavedEntry = { kind: 'name', id: this.deps.randomId(), name, mode, savedAt: this.deps.now() };
+    this.persistSave([...items, saved]);
+  }
+
+  /** Saves or removes a whole release as a single shortlist entry. */
+  toggleSaveAlbum(album: { title: string; tracks: string[] }): void {
+    const items = this.state.shortlist;
+    const index = findSaved(items, album.title, 'release');
+    if (index !== -1) {
+      this.removeSaved(items[index].id);
+      return;
+    }
+    if (items.length >= 300) {
+      this.showToast('Shortlist is full (300 names). Remove some first — nothing was saved.');
+      return;
+    }
+    const saved: SavedEntry = {
+      kind: 'album',
+      id: this.deps.randomId(),
+      title: album.title,
+      tracks: [...album.tracks],
+      mode: 'release',
+      savedAt: this.deps.now(),
+    };
+    this.persistSave([...items, saved]);
+  }
+
+  /** Explore-sheet Save chip: toggles the album when the seed is its title. */
+  toggleExploreSave(): void {
+    const explore = this.state.explore;
+    if (explore === null) return;
+    if (explore.album !== null) {
+      this.toggleSaveAlbum(explore.album);
+      return;
+    }
+    this.toggleSave(explore.seed, explore.mode);
+  }
+
+  /** Writes the store only after the write succeeded; failures toast. */
+  private persistSave(next: SavedEntry[]): void {
     const persisted = this.deps.persistShortlist(next);
     if (!persisted) {
       this.showToast("Couldn't save: browser storage is unavailable. Your shortlist lives in this browser only.");
@@ -530,7 +773,7 @@ export class AppStore {
       this.showToast('Nothing to copy yet.');
       return;
     }
-    const ok = await this.deps.copy(items.map((item) => item.name).join('\n'));
+    const ok = await this.deps.copy(items.map(formatEntry).join('\n\n'));
     this.showToast(ok ? 'Copied.' : "Copy isn't available here — select the names to copy them.");
   }
 }

@@ -7,8 +7,10 @@
  */
 import type { NamingRequest } from '../../shared/contracts';
 
+/** One request outcome: a flat name batch, one album, or a failure. */
 export type WireOutcome =
-  | { ok: true; names: string[]; partial: boolean }
+  | { ok: true; kind: 'names'; names: string[]; partial: boolean }
+  | { ok: true; kind: 'album'; title: string; tracks: string[]; partial: boolean }
   | { ok: false; code: string; message: string; retryable: boolean };
 
 /**
@@ -18,6 +20,9 @@ export type WireOutcome =
  */
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '');
 const API_ENDPOINT = `${API_BASE}/api/generate`;
+
+/** Shown when a 2xx body is not one of the two documented success shapes. */
+export const UNREADABLE_OUTPUT_MESSAGE = 'The naming service returned an unreadable response.';
 
 function serverFailure(status: number, raw: unknown): WireOutcome {
   const fallbackMessage =
@@ -37,6 +42,33 @@ function serverFailure(status: number, raw: unknown): WireOutcome {
     }
   }
   return { ok: false, code: 'SERVICE_UNAVAILABLE', message: fallbackMessage, retryable: false };
+}
+
+/**
+ * Decodes the two documented success bodies. An `album` key is decoded as an
+ * album even when malformed (a release answer must never be read as names);
+ * anything that does not match its shape is rejected.
+ */
+function successOutcome(raw: unknown): WireOutcome | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const body = raw as Record<string, unknown>;
+  const { partial } = body;
+  if (typeof partial !== 'boolean') return null;
+
+  if (body.album !== undefined) {
+    const album = body.album;
+    if (typeof album !== 'object' || album === null) return null;
+    const { title, tracks } = album as Record<string, unknown>;
+    if (typeof title !== 'string' || title === '') return null;
+    if (!Array.isArray(tracks) || tracks.some((track) => typeof track !== 'string')) return null;
+    return { ok: true, kind: 'album', title, tracks: tracks as string[], partial };
+  }
+
+  const { names } = body;
+  if (Array.isArray(names) && names.every((name) => typeof name === 'string')) {
+    return { ok: true, kind: 'names', names: names as string[], partial };
+  }
+  return null;
 }
 
 export async function submitNaming(
@@ -71,11 +103,7 @@ export async function submitNaming(
 
   if (!response.ok) return serverFailure(response.status, raw);
 
-  if (typeof raw === 'object' && raw !== null) {
-    const { names, partial } = raw as Record<string, unknown>;
-    if (Array.isArray(names) && typeof partial === 'boolean' && names.every((n) => typeof n === 'string')) {
-      return { ok: true, names: names as string[], partial };
-    }
-  }
-  return { ok: false, code: 'UNUSABLE_OUTPUT', message: 'The naming service returned an unreadable response.', retryable: true };
+  const outcome = successOutcome(raw);
+  if (outcome !== null) return outcome;
+  return { ok: false, code: 'UNUSABLE_OUTPUT', message: UNREADABLE_OUTPUT_MESSAGE, retryable: true };
 }

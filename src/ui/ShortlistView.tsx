@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AppStore } from '../state/appStore';
-import type { AppState } from '../state/types';
+import { entryTitle, formatEntry } from '../state/helpers';
+import type { AppState, SavedEntry } from '../state/types';
 import { ChevronRightIcon, CopyIcon, RemoveIcon, StarIcon } from './icons';
 import { formatSavedDate, MODE_LABELS } from './labels';
 
@@ -69,42 +70,7 @@ export function ShortlistView({ state, store }: ShortlistViewProps) {
         </div>
       ) : (
         <ul className="saved-list">
-          {items.map((item) => (
-            <li key={item.id} className="saved-row">
-              <div className="saved-main">
-                <button
-                  type="button"
-                  className="saved-name-open"
-                  aria-label={`Explore “${item.name}” for more like this`}
-                  onClick={() => store.openSavedExplore(item.name, item.mode)}
-                >
-                  <span className="saved-name">{item.name}</span>
-                  <ChevronRightIcon size={18} />
-                </button>
-                <span className="saved-meta">
-                  {MODE_LABELS[item.mode]} · saved {formatSavedDate(item.savedAt)}
-                </span>
-              </div>
-              <div className="saved-actions">
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`Copy “${item.name}”`}
-                  onClick={() => void store.copyName(item.name)}
-                >
-                  <CopyIcon size={20} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`Remove “${item.name}” from shortlist`}
-                  onClick={() => store.removeSaved(item.id)}
-                >
-                  <RemoveIcon size={20} />
-                </button>
-              </div>
-            </li>
-          ))}
+          {items.map((item) => <SavedRow key={item.id} item={item} store={store} />)}
         </ul>
       )}
 
@@ -113,5 +79,51 @@ export function ShortlistView({ state, store }: ShortlistViewProps) {
         Copy your shortlist to keep it elsewhere.
       </p>
     </section>
+  );
+}
+
+/** One entry: a name, or a whole release with its tracks in a compact list. */
+function SavedRow({ item, store }: { item: SavedEntry; store: AppStore }) {
+  const title = entryTitle(item);
+  return (
+    <li className="saved-row">
+      <div className="saved-main">
+        <button
+          type="button"
+          className="saved-name-open"
+          aria-label={`Explore “${title}” for more like this`}
+          onClick={() => store.openSavedExplore(item)}
+        >
+          <span className="saved-name">{title}</span>
+          <ChevronRightIcon size={18} />
+        </button>
+        <span className="saved-meta">
+          {MODE_LABELS[item.mode]} · saved {formatSavedDate(item.savedAt)}
+        </span>
+        {item.kind === 'album' && (
+          <ol className="saved-tracks">
+            {item.tracks.map((track, index) => <li key={`${item.id}-${index}`}>{track}</li>)}
+          </ol>
+        )}
+      </div>
+      <div className="saved-actions">
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={`Copy “${title}”`}
+          onClick={() => void store.copyName(formatEntry(item))}
+        >
+          <CopyIcon size={20} />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={`Remove “${title}” from shortlist`}
+          onClick={() => store.removeSaved(item.id)}
+        >
+          <RemoveIcon size={20} />
+        </button>
+      </div>
+    </li>
   );
 }

@@ -8,7 +8,11 @@ import { App } from './App';
 import type { WireOutcome } from '../browser/api';
 
 function success(names: string[], partial = false): WireOutcome {
-  return { ok: true, names, partial };
+  return { ok: true, kind: 'names', names, partial };
+}
+
+function albumSuccess(title: string, tracks: string[], partial = false): WireOutcome {
+  return { ok: true, kind: 'album', title, tracks, partial };
 }
 
 function createDeps(submit: unknown, options: { copy?: (t: string) => Promise<boolean> } = {}): StoreDeps {
@@ -209,5 +213,66 @@ describe('main journey', () => {
     expect(within(dialog).getByText(/Original brief isn't available/)).toBeInTheDocument();
     // Local action: no model request for opening the sheet.
     expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('release journey: album title and tracks, one-track replace, save, reload, copy', async () => {
+    const user = userEvent.setup();
+    const copied: string[] = [];
+    let call = 0;
+    const submit = vi.fn(async (_request: unknown) => {
+      call += 1;
+      return call === 1
+        ? albumSuccess('Rain On The Windscreen', ['Wipers On Low', 'Halfway Home', 'Static Bloom'])
+        : success(['Neon Porch']);
+    });
+    const store = new AppStore(createDeps(submit, { copy: async (text) => { copied.push(text); return true; } }));
+    const first = render(<App store={store} />);
+
+    // --- first session: one album arrives --------------------------------
+    await user.click(screen.getByRole('button', { name: 'Release' }));
+    await user.click(screen.getByRole('button', { name: 'Surprise me' }));
+    expect(await screen.findByText('Rain On The Windscreen')).toBeInTheDocument();
+    expect(screen.getByText('Wipers On Low')).toBeInTheDocument();
+    expect(screen.getByText('Halfway Home')).toBeInTheDocument();
+    expect(submit.mock.calls[0][0]).toMatchObject({ operation: 'generate', mode: 'release' });
+
+    // --- replace one track: only that slot changes -----------------------
+    await user.click(screen.getByRole('button', { name: 'Replace “Halfway Home” with a new one' }));
+    expect(await screen.findByText('Neon Porch')).toBeInTheDocument();
+    expect(screen.queryByText('Halfway Home')).not.toBeInTheDocument();
+    expect(screen.getByText('Wipers On Low')).toBeInTheDocument();
+    expect(screen.getByText('Static Bloom')).toBeInTheDocument();
+    expect(submit.mock.calls[1][0]).toMatchObject({
+      operation: 'replaceTrack',
+      mode: 'release',
+      albumTitle: 'Rain On The Windscreen',
+      tracks: ['Wipers On Low', 'Static Bloom'],
+    });
+
+    // --- save the whole album as one entry -------------------------------
+    await user.click(screen.getByRole('button', { name: 'Save “Rain On The Windscreen” to shortlist' }));
+    expect(await screen.findByRole('button', { name: 'Remove “Rain On The Windscreen” from shortlist' })).toBeInTheDocument();
+
+    // --- simulated reload: new store over the same persisted storage -----
+    first.unmount();
+    const reloadedSubmit = vi.fn();
+    const reloaded = new AppStore(createDeps(reloadedSubmit, { copy: async (text) => { copied.push(text); return true; } }));
+    render(<App store={reloaded} />);
+    await act(async () => {});
+    expect(reloadedSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText('Neon Porch')).toBeInTheDocument();
+
+    // The shortlist holds the album with its replaced track list.
+    await user.click(screen.getByRole('button', { name: /Shortlist/ }));
+    expect(screen.getByText('Rain On The Windscreen')).toBeInTheDocument();
+    expect(screen.getByText('Wipers On Low')).toBeInTheDocument();
+    expect(screen.getByText('Neon Porch')).toBeInTheDocument();
+    expect(screen.getByText('Static Bloom')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Copy “Rain On The Windscreen”' }));
+    expect(await screen.findByText('Copied.')).toBeInTheDocument();
+    expect(copied[copied.length - 1]).toBe('Rain On The Windscreen\n1. Wipers On Low\n2. Neon Porch\n3. Static Bloom');
+    expect(submit).toHaveBeenCalledTimes(2);
   });
 });

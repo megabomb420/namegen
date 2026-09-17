@@ -5,16 +5,31 @@
 import type { LengthPref, Mode } from '../../shared/contracts';
 import { AVOID_MAX, NAME_MAX } from '../../shared/limits';
 import { countCodePoints, hasControlCharacter, nameKey } from '../../shared/text';
-import type { SavedName } from './types';
+import type { SavedEntry } from './types';
+
+/** The title a shortlist entry is compared, shown and copied by. */
+export function entryTitle(entry: SavedEntry): string {
+  return entry.kind === 'album' ? entry.title : entry.name;
+}
 
 export function savedKey(name: string, mode: Mode): string {
   return `${mode}\u0000${nameKey(name)}`;
 }
 
-/** Same-mode duplicate comparison using the shared normalised key. */
-export function findSaved(items: readonly SavedName[], name: string, mode: Mode): number {
+/**
+ * Same-mode duplicate comparison using the shared normalised key. Albums
+ * compare by their title, so one album is one entry alongside single names.
+ */
+export function findSaved(items: readonly SavedEntry[], name: string, mode: Mode): number {
   const target = savedKey(name, mode);
-  return items.findIndex((item) => savedKey(item.name, item.mode) === target);
+  return items.findIndex((item) => savedKey(entryTitle(item), item.mode) === target);
+}
+
+/** Clipboard text for one saved entry: a name, or a title plus numbered tracks. */
+export function formatEntry(entry: SavedEntry): string {
+  if (entry.kind === 'name') return entry.name;
+  const tracks = entry.tracks.map((track, index) => `${index + 1}. ${track}`).join('\n');
+  return `${entry.title}\n${tracks}`;
 }
 
 export function isValidDisplayName(name: string): boolean {
@@ -27,7 +42,8 @@ export function isValidDisplayName(name: string): boolean {
 
 /**
  * Appends just-displayed names to the recent-name exclusion list. Bounded to
- * 24, deduplicated by comparison key, most recent last.
+ * 24, deduplicated by comparison key, most recent last. Album titles and
+ * track titles go through the same list.
  */
 export function pushAvoidNames(existing: readonly string[], displayed: readonly string[]): string[] {
   const list = existing.filter((n) => isValidDisplayName(n));
@@ -48,15 +64,27 @@ export function pushBatch<T extends DisplayBatchLike>(existing: readonly T[], ba
   return next.slice(-limit);
 }
 
-export interface DisplayBatchLike {
-  names: string[];
+interface DisplayBatchLikeBase {
   partial: boolean;
-  mode: Mode;
   language: string;
   length: LengthPref;
   brief: string | null;
   displayedAt: number;
 }
+
+export interface NamesBatchLike extends DisplayBatchLikeBase {
+  names: string[];
+  mode: Mode;
+}
+
+export interface AlbumBatchLike extends DisplayBatchLikeBase {
+  kind: 'album';
+  title: string;
+  tracks: string[];
+  mode: 'release';
+}
+
+export type DisplayBatchLike = NamesBatchLike | AlbumBatchLike;
 
 /** The brief draft belonging to the currently selected mode. */
 export function activeBrief(state: { mode: Mode; briefByMode: Record<Mode, string> }): string {
@@ -94,6 +122,6 @@ export function toRefineRequest(input: {
   };
 }
 
-export function emptyShortlist(): SavedName[] {
+export function emptyShortlist(): SavedEntry[] {
   return [];
 }

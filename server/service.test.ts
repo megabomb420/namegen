@@ -3,6 +3,7 @@ import { runNamingRequest } from './service';
 import { SYSTEM_PROMPT } from './runtime-prompt';
 
 const validRequest = { operation: 'generate', mode: 'track', brief: 'a kick drum that hits like a door slamming' };
+const releaseRequest = { operation: 'generate', mode: 'release', brief: 'a coastal EP cut from field recordings' };
 
 interface EnvelopeOptions {
   finishReason?: string | null;
@@ -33,6 +34,16 @@ type FetchSpy = ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => Pro
 function okFetch(names: unknown[], options: EnvelopeOptions = {}): FetchSpy {
   return vi.fn(async () => okResponse(names, options));
 }
+
+function albumResponse(title: unknown, tracks: unknown[], options: EnvelopeOptions = {}): Response {
+  return providerResponse(JSON.stringify({ title, tracks }), options);
+}
+
+function albumFetch(title: unknown, tracks: unknown[], options: EnvelopeOptions = {}): FetchSpy {
+  return vi.fn(async () => albumResponse(title, tracks, options));
+}
+
+const albumTracks = (n: number) => Array.from({ length: n }, (_, i) => `Track ${i + 1}`);
 
 afterEach(() => {
   vi.useRealTimers();
@@ -86,7 +97,7 @@ describe('runNamingRequest', () => {
       requestDeps(fetchImpl as unknown as typeof fetch),
     );
     expect(result).toMatchObject({ ok: true, partial: false });
-    if (!result.ok) return;
+    if (!result.ok || result.kind !== 'names') return;
     expect(result.names).toHaveLength(6);
 
     const [, init] = fetchImpl.mock.calls[0];
@@ -99,7 +110,35 @@ describe('runNamingRequest', () => {
     expect(body.messages[0].content).toContain('Keeper of the Iron Tongue');
     const payload = JSON.parse(body.messages[1].content);
     expect(payload).toMatchObject({ operation: 'alias', mode: 'artist' });
-    expect(payload).not.toHaveProperty('language');
+    // The alias personas follow the requested language, but carry no length
+    // guidance: their names are always two words.
+    expect(payload.language).toBe('English');
+    expect(payload).not.toHaveProperty('length');
+  });
+
+  it('sends the requested language to the alias personas and never a length', async () => {
+    const fetchImpl = okFetch([
+      'Rincón Suave',
+      'Luz de Bus',
+      'Papel Ahumado',
+      'Radio Vieja',
+      'Pan de Nube',
+      'Sur Lejano',
+      'Cinta Azul',
+      'Último Andén',
+    ]);
+    const result = await runNamingRequest(
+      { operation: 'alias', mode: 'artist', language: 'Spanish', brief: 'un alias para la madrugada' },
+      requestDeps(fetchImpl as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ ok: true, kind: 'names', partial: false });
+
+    const [, init] = fetchImpl.mock.calls[0];
+    const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+    expect(payload.language).toBe('Spanish');
+    expect(payload).not.toHaveProperty('length');
+    expect(payload).not.toHaveProperty('albumTitle');
+    expect(payload).not.toHaveProperty('tracks');
   });
 
   it('uses the emo cloud-rap persona when aliasStyle is emo', async () => {
@@ -148,6 +187,102 @@ describe('runNamingRequest', () => {
     const [, init] = fetchImpl.mock.calls[0];
     const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
     expect(payload).toMatchObject({ operation: 'refine', seed: 'Cold Front', instruction: 'warmer and shorter' });
+  });
+
+  it('names one album for a release-mode generate and returns its title and tracks', async () => {
+    const fetchImpl = albumFetch('Tide Book', albumTracks(12));
+    const result = await runNamingRequest(releaseRequest, requestDeps(fetchImpl as unknown as typeof fetch));
+    expect(result).toMatchObject({ ok: true, kind: 'album', partial: false });
+    if (!result.ok || result.kind !== 'album') return;
+    expect(result.title).toBe('Tide Book');
+    expect(result.tracks).toEqual(albumTracks(10));
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [, init] = fetchImpl.mock.calls[0];
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({ thinking: { type: 'disabled' }, max_tokens: 800 });
+    expect(body).not.toHaveProperty('reasoning_effort');
+    const payload = JSON.parse(body.messages[1].content);
+    expect(payload).toMatchObject({
+      operation: 'generate',
+      mode: 'release',
+      task: 'You are naming an album, EP or project: one title plus its track list.',
+      language: 'English',
+      length: 'auto',
+    });
+    expect(payload.brief).toContain('field recordings');
+  });
+
+  it('treats a names batch as unusable output for a release request', async () => {
+    const fetchImpl = okFetch(['Tide Book', 'Salt Air']);
+    const result = await runNamingRequest(releaseRequest, requestDeps(fetchImpl as unknown as typeof fetch));
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'UNUSABLE_OUTPUT',
+      message: 'No usable album came back this time. Try again.',
+      retryable: true,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats an album whose title cannot be used as unusable output', async () => {
+    const fetchImpl = albumFetch('x'.repeat(61), ['Track 1']);
+    const result = await runNamingRequest(releaseRequest, requestDeps(fetchImpl as unknown as typeof fetch));
+    expect(result).toMatchObject({ ok: false, code: 'UNUSABLE_OUTPUT', retryable: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('flags a partial album when fewer than ten tracks survive', async () => {
+    const fetchImpl = albumFetch('Tide Book', albumTracks(9));
+    const result = await runNamingRequest(releaseRequest, requestDeps(fetchImpl as unknown as typeof fetch));
+    expect(result).toMatchObject({ ok: true, kind: 'album', partial: true });
+    if (!result.ok || result.kind !== 'album') return;
+    expect(result.tracks).toEqual(albumTracks(9));
+  });
+
+  it('sends the album context for replaceTrack and keeps a single candidate', async () => {
+    const fetchImpl = okFetch(['Third Rail', 'Signal Fog', 'Last Ferry']);
+    const result = await runNamingRequest(
+      {
+        operation: 'replaceTrack',
+        mode: 'release',
+        brief: 'the missing middle track',
+        albumTitle: 'Tide Book',
+        tracks: ['Harbor Lights', 'Salt Air'],
+      },
+      requestDeps(fetchImpl as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ ok: true, kind: 'names', partial: false });
+    if (!result.ok || result.kind !== 'names') return;
+    expect(result.names).toEqual(['Third Rail']);
+
+    const [, init] = fetchImpl.mock.calls[0];
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({ thinking: { type: 'disabled' }, max_tokens: 800 });
+    expect(body).not.toHaveProperty('reasoning_effort');
+    const payload = JSON.parse(body.messages[1].content);
+    expect(payload).toMatchObject({
+      operation: 'replaceTrack',
+      mode: 'release',
+      task: 'You are replacing one track title on an album, keeping it consistent with the record it belongs to.',
+      albumTitle: 'Tide Book',
+      tracks: ['Harbor Lights', 'Salt Air'],
+      language: 'English',
+      length: 'auto',
+    });
+    for (const forbidden of ['seed', 'instruction', 'aliasStyle']) {
+      expect(payload).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it('accepts only the three candidates it asked the provider for on replaceTrack', async () => {
+    const fetchImpl = okFetch(['A', 'B', 'C', 'D']);
+    const result = await runNamingRequest(
+      { operation: 'replaceTrack', mode: 'release', tracks: [] },
+      requestDeps(fetchImpl as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ ok: false, code: 'UNUSABLE_OUTPUT', retryable: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('truncated provider output is rejected and never re-requested', async () => {

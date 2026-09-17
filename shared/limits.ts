@@ -14,10 +14,10 @@ export const DEFAULT_LANGUAGE = 'English';
 export const REQUEST_BODY_LIMIT_BYTES = 24 * 1024;
 
 /**
- * Display targets per operation. The server requests more candidates than it
- * displays and discards the unused surplus after filtering/selection.
+ * Album shape (release mode): the server asks for more track titles than it
+ * displays, so invalid or duplicate entries still leave a full track list.
  */
-export const DISPLAY_TARGETS: Record<'generate' | 'refine', number> = {
-  generate: 6,
-  refine: 4,
-};
+export const ALBUM_TRACKS = { requested: 12, display: 10 } as const;
+
+/** Maximum track titles a replaceTrack request may carry as context. */
+export const TRACKS_MAX = 12;

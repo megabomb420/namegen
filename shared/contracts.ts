@@ -5,14 +5,15 @@
  * module may import browser, node, or provider APIs.
  */
 
-export type Operation = 'generate' | 'refine' | 'alias';
+export type Operation = 'generate' | 'refine' | 'alias' | 'replaceTrack';
 export type Mode = 'track' | 'release' | 'artist';
 export type LengthPref = 'auto' | 'short';
 export type AliasStyle = 'wu' | 'emo';
 
-export const OPERATIONS: readonly Operation[] = ['generate', 'refine', 'alias'];
+export const OPERATIONS: readonly Operation[] = ['generate', 'refine', 'alias', 'replaceTrack'];
 export const MODES: readonly Mode[] = ['track', 'release', 'artist'];
 export const LENGTH_PREFS: readonly LengthPref[] = ['auto', 'short'];
+export const ALIAS_STYLES: readonly AliasStyle[] = ['wu', 'emo'];
 
 /**
  * The single canonical application request. The client supplies only these
@@ -36,6 +37,10 @@ export interface NamingRequest {
   avoid?: string[];
   /** Which alias persona to use (alias operation only). Defaults to "wu". */
   aliasStyle?: AliasStyle;
+  /** Album title a replacement track must fit (replaceTrack only). */
+  albumTitle?: string;
+  /** The album's remaining track titles to fit and never repeat (replaceTrack only). */
+  tracks?: string[];
 }
 
 /** Validated, defaults-applied request used by the naming service. */
@@ -50,14 +55,32 @@ export interface NormalizedRequest {
   avoid: string[];
   /** Present on alias requests only. */
   aliasStyle?: AliasStyle;
+  /** Present (or null) on replaceTrack requests only. */
+  albumTitle?: string | null;
+  /** Present (possibly empty) on replaceTrack requests only. */
+  tracks?: string[];
 }
 
-export interface NamingSuccess {
+/** A flat batch of interchangeable names (track/artist naming, refine, alias). */
+export interface NamingSuccessNames {
   ok: true;
+  kind: 'names';
   names: string[];
   /** True when the batch has fewer names than the display target. */
   partial: boolean;
 }
+
+/** One release: a single album title plus its track list. */
+export interface NamingSuccessAlbum {
+  ok: true;
+  kind: 'album';
+  title: string;
+  tracks: string[];
+  /** True when the track list is shorter than the display target. */
+  partial: boolean;
+}
+
+export type NamingSuccess = NamingSuccessNames | NamingSuccessAlbum;
 
 export type ApiErrorCode =
   | 'INVALID_INPUT'

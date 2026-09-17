@@ -7,19 +7,26 @@
  * Missing, corrupt, blocked or full storage must not crash the app: loaders
  * return safe defaults, persisters report success so callers can tell the
  * user only after a real write.
+ *
+ * Records written before albums existed carry no `kind`; they are read as
+ * names, so the album migration is additive and loses no stored data.
  */
-import type { LengthPref, Mode } from '../../shared/contracts';
-import { AVOID_MAX, NAME_MAX } from '../../shared/limits';
+import type { AliasStyle, LengthPref, Mode } from '../../shared/contracts';
+import { AVOID_MAX, NAME_MAX, TRACKS_MAX } from '../../shared/limits';
 import { countCodePoints, hasControlCharacter } from '../../shared/text';
-import type { SavedName } from '../state/types';
+import type { SavedEntry } from '../state/types';
 
 export interface StoredPrefs {
   version: 1;
   language: string;
   length: LengthPref;
+  /** Artist alias persona. Older records have none and load as "wu". */
+  aliasStyle?: AliasStyle;
 }
 
-export interface StoredBatch {
+export interface StoredNamesBatch {
+  /** Absent on records written before albums existed. */
+  kind?: 'names';
   names: string[];
   partial: boolean;
   mode: Mode;
@@ -27,6 +34,19 @@ export interface StoredBatch {
   length: LengthPref;
   displayedAt: number;
 }
+
+export interface StoredAlbumBatch {
+  kind: 'album';
+  title: string;
+  tracks: string[];
+  partial: boolean;
+  mode: 'release';
+  language: string;
+  length: LengthPref;
+  displayedAt: number;
+}
+
+export type StoredBatch = StoredNamesBatch | StoredAlbumBatch;
 
 export interface StoredSession {
   version: 1;
@@ -38,6 +58,9 @@ export const PREFS_KEY = 'namegen.prefs.v1';
 export const SHORTLIST_KEY = 'namegen.shortlist.v1';
 export const SESSION_KEY = 'namegen.session.v1';
 export const SHORTLIST_CAP = 300;
+
+/** Names a batch of flat names may hold; albums use the shared track limit. */
+const NAMES_MAX = 6;
 
 function safeGet(storage: Storage | null, key: string): string | null {
   if (storage === null) return null;
@@ -76,11 +99,20 @@ function validLength(v: unknown): v is LengthPref {
   return v === 'auto' || v === 'short';
 }
 
+function validAliasStyle(v: unknown): v is AliasStyle {
+  return v === 'wu' || v === 'emo';
+}
+
 function validName(v: unknown): v is string {
   if (typeof v !== 'string') return false;
   if (countCodePoints(v) === 0 || countCodePoints(v) > NAME_MAX) return false;
   if (hasControlCharacter(v)) return false;
   return true;
+}
+
+function validTracks(v: unknown): v is string[] {
+  if (!Array.isArray(v) || v.length === 0 || v.length > TRACKS_MAX) return false;
+  return v.every((track) => validName(track));
 }
 
 function getLocal(): Storage | null {
@@ -105,11 +137,11 @@ export function loadPrefs(): StoredPrefs | null {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return null;
-    const { version, language, length } = parsed as Record<string, unknown>;
+    const { version, language, length, aliasStyle } = parsed as Record<string, unknown>;
     if (version !== 1 || typeof language !== 'string' || language === '' || !validLength(length)) {
       return null;
     }
-    return { version: 1, language, length };
+    return { version: 1, language, length, aliasStyle: validAliasStyle(aliasStyle) ? aliasStyle : 'wu' };
   } catch {
     return null;
   }
@@ -119,7 +151,7 @@ export function persistPrefs(prefs: StoredPrefs): boolean {
   return safeSet(getLocal(), PREFS_KEY, JSON.stringify(prefs));
 }
 
-export function loadShortlist(): SavedName[] {
+export function loadShortlist(): SavedEntry[] {
   const raw = safeGet(getLocal(), SHORTLIST_KEY);
   if (raw === null) return [];
   try {
@@ -127,12 +159,21 @@ export function loadShortlist(): SavedName[] {
     if (typeof parsed !== 'object' || parsed === null) return [];
     const { version, items } = parsed as Record<string, unknown>;
     if (version !== 1 || !Array.isArray(items)) return [];
-    const result: SavedName[] = [];
+    const result: SavedEntry[] = [];
     for (const item of items) {
+      // Invalid entries are dropped one by one; the rest of the list loads.
       if (typeof item !== 'object' || item === null) continue;
-      const { id, name, mode, savedAt } = item as Record<string, unknown>;
-      if (typeof id !== 'string' || !validName(name) || !validMode(mode) || typeof savedAt !== 'number') continue;
-      result.push({ id, name, mode, savedAt });
+      const record = item as Record<string, unknown>;
+      const { kind, id, mode, savedAt } = record;
+      if (typeof id !== 'string' || !validMode(mode) || typeof savedAt !== 'number') continue;
+      if (kind === 'album') {
+        if (mode !== 'release' || !validName(record.title) || !validTracks(record.tracks)) continue;
+        result.push({ kind: 'album', id, title: record.title, tracks: record.tracks, mode: 'release', savedAt });
+        continue;
+      }
+      if (kind !== undefined && kind !== 'name') continue;
+      if (!validName(record.name)) continue;
+      result.push({ kind: 'name', id, name: record.name, mode, savedAt });
     }
     return result;
   } catch {
@@ -140,18 +181,37 @@ export function loadShortlist(): SavedName[] {
   }
 }
 
-export function persistShortlist(items: SavedName[]): boolean {
+export function persistShortlist(items: SavedEntry[]): boolean {
   return safeSet(getLocal(), SHORTLIST_KEY, JSON.stringify({ version: 1, items: items.slice(0, SHORTLIST_CAP) }));
 }
 
 function validStoredBatch(v: unknown): v is StoredBatch {
   if (typeof v !== 'object' || v === null) return false;
-  const { names, partial, mode, language, length, displayedAt } = v as Record<string, unknown>;
-  if (!Array.isArray(names) || names.length > 6 || names.some((n) => !validName(n))) return false;
+  const record = v as Record<string, unknown>;
+  const { kind, partial, mode, language, length, displayedAt } = record;
   if (typeof partial !== 'boolean' || !validMode(mode)) return false;
   if (typeof language !== 'string' || language === '' || language.length > 40) return false;
   if (!validLength(length) || typeof displayedAt !== 'number') return false;
+  if (kind === 'album') {
+    return mode === 'release' && validName(record.title) && validTracks(record.tracks);
+  }
+  if (kind !== undefined && kind !== 'names') return false;
+  const { names } = record;
+  if (!Array.isArray(names) || names.length > NAMES_MAX || names.some((n) => !validName(n))) return false;
   return true;
+}
+
+function normalizeBatch(batch: StoredBatch): StoredBatch {
+  if (batch.kind === 'album') return batch;
+  return {
+    kind: 'names',
+    names: batch.names,
+    partial: batch.partial,
+    mode: batch.mode,
+    language: batch.language,
+    length: batch.length,
+    displayedAt: batch.displayedAt,
+  };
 }
 
 export function loadSession(): StoredSession | null {
@@ -164,7 +224,7 @@ export function loadSession(): StoredSession | null {
     if (version !== 1 || !Array.isArray(batches) || batches.length > 2) return null;
     if (!Array.isArray(avoid) || avoid.length > AVOID_MAX || avoid.some((n) => !validName(n))) return null;
     if (batches.some((b) => !validStoredBatch(b))) return null;
-    return { version: 1, batches: batches as StoredBatch[], avoid: avoid as string[] };
+    return { version: 1, batches: (batches as StoredBatch[]).map(normalizeBatch), avoid: avoid as string[] };
   } catch {
     return null;
   }

@@ -5,11 +5,12 @@
  * dependencies; the public result is the application contract only.
  */
 import type { NamingResult, NormalizedRequest } from '../shared/contracts';
-import { REQUEST_COUNTS, THINKING_SETTINGS } from './config';
+import { ALBUM_TRACKS } from '../shared/limits';
+import { isAlbumRequest, REQUEST_COUNTS, THINKING_SETTINGS } from './config';
 import { ALIAS_SYSTEM, ALIAS_SYSTEM_EMO } from './alias-prompt';
 import { callChatCompletions, type DeepSeekUsage, type ProviderDeps } from './provider';
 import { normalizeRequest } from './validation';
-import { selectNames, type SelectionStats } from './selection';
+import { selectAlbum, selectNames, type SelectionStats } from './selection';
 
 export interface ServiceReport {
   outcome:
@@ -38,12 +39,19 @@ export interface NamingServiceDeps {
 }
 
 /** Human-readable task per tab, sent in the payload so the model always knows
- * exactly what it is producing in the active tab (track/release/artist/alias). */
+ * exactly what it is producing in the active tab (track/release/artist/alias/
+ * track replacement). */
 function taskLabel(request: NormalizedRequest): string {
   if (request.operation === 'alias') {
     return request.aliasStyle === 'emo'
       ? 'You are handing out a sad, cloud-rap style artist alias.'
       : 'You are handing out a Wu-Tang-style artist alias.';
+  }
+  if (request.operation === 'replaceTrack') {
+    return 'You are replacing one track title on an album, keeping it consistent with the record it belongs to.';
+  }
+  if (isAlbumRequest(request)) {
+    return 'You are naming an album, EP or project: one title plus its track list.';
   }
   const subject =
     request.mode === 'track'
@@ -71,8 +79,14 @@ function buildPayload(request: NormalizedRequest): Record<string, unknown> {
   if (request.operation === 'alias' && request.aliasStyle !== undefined) {
     payload.aliasStyle = request.aliasStyle;
   }
-  if (request.operation === 'generate' || request.operation === 'refine') {
-    payload.language = request.language;
+  if (request.operation === 'replaceTrack') {
+    payload.albumTitle = request.albumTitle ?? '';
+    payload.tracks = request.tracks ?? [];
+  }
+  // The requested language applies to every operation, aliases included.
+  // Length guidance does not apply to the two-word alias personas.
+  payload.language = request.language;
+  if (request.operation !== 'alias') {
     payload.length = request.length;
   }
   return payload;
@@ -103,10 +117,10 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
   const counts = REQUEST_COUNTS[request.operation];
 
   const providerDeps: ProviderDeps = { fetchImpl, apiKey, ...(now !== undefined ? { now } : {}) };
-  // Naming (generate/refine) keeps thinking DISABLED per spec §6 — live runs
-  // with thinking enabled truncated on the 1500-token ceiling and took ~25s
-  // per call. The alias operation runs with thinking ENABLED and picks its
-  // persona from aliasStyle (wu | emo).
+  // Naming requests (generate, refine, replaceTrack and album requests) keep
+  // thinking DISABLED per spec §6 — live runs with thinking enabled truncated
+  // on the token ceiling and took ~25s per call. The alias operation runs with
+  // thinking ENABLED and picks its persona from aliasStyle (wu | emo).
   const isAlias = request.operation === 'alias';
   const aliasSystem = request.aliasStyle === 'emo' ? ALIAS_SYSTEM_EMO : ALIAS_SYSTEM;
   const result = await callChatCompletions(buildPayload(request), providerDeps, isAlias
@@ -172,6 +186,39 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
           retryable: true,
         };
       }
+      // A release-mode generate names one album: a title plus its track list.
+      if (isAlbumRequest(request)) {
+        const album = selectAlbum({
+          content: result.content,
+          requestedTracks: ALBUM_TRACKS.requested,
+          displayTracks: ALBUM_TRACKS.display,
+          request,
+        });
+        if (!album.ok) {
+          log?.({
+            outcome: album.reason === 'empty' ? 'selection-empty' : 'selection-shape',
+            latencyMs: result.latencyMs,
+            usage: result.usage ?? undefined,
+            stats: album.stats,
+          });
+          return {
+            ok: false,
+            code: 'UNUSABLE_OUTPUT',
+            message: 'No usable album came back this time. Try again.',
+            retryable: true,
+          };
+        }
+        log?.({
+          outcome: 'success',
+          latencyMs: result.latencyMs,
+          usage: result.usage ?? undefined,
+          stats: album.stats,
+          partial: album.partial,
+          kept: album.tracks.length,
+        });
+        return { ok: true, kind: 'album', title: album.title, tracks: album.tracks, partial: album.partial };
+      }
+
       const selection = selectNames({
         content: result.content,
         requested: counts.requested,
@@ -200,7 +247,7 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
         partial: selection.partial,
         kept: selection.names.length,
       });
-      return { ok: true, names: selection.names, partial: selection.partial };
+      return { ok: true, kind: 'names', names: selection.names, partial: selection.partial };
     }
   }
 }

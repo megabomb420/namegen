@@ -99,5 +99,25 @@
       "seed": "Fairground Ghost",
       "instruction": "Más corto y fácil de pronunciar, mantén la sensación de feria encantada."
     }
+  },
+  {
+    "id": "g-release-tracklist",
+    "label": "Release generate: one title plus its track list",
+    "request": {
+      "operation": "generate",
+      "mode": "release",
+      "brief": "A debut album about a flooded quarry town: the pit filling with rainwater, the last shift at the lime works, a radio still on in the changing rooms. The title should feel like a place that no longer exists on any map, and the tracks should read as its running order."
+    }
+  },
+  {
+    "id": "x-release-replace-track",
+    "label": "Replace a track title on a release",
+    "request": {
+      "operation": "replaceTrack",
+      "mode": "release",
+      "albumTitle": "Quarry Water",
+      "tracks": ["Last Shift", "Changing Rooms", "Silt Line"],
+      "brief": "A slow, waterlogged instrumental that sits after 'Silt Line'. Concrete and specific, not a poem."
+    }
   }
 ]
