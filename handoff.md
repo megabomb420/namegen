@@ -1,163 +1,145 @@
 # Implementation handoff — [HANDOFF]
 
-Updated: 2026-09-06 (implementation complete; review findings fixed; **live DeepSeek creative run passed 12/12** — see `creative-results-2026-09-06.md`; deploy and device checks still unverified).
+Updated: 2026-09-17. The frontend redesign is complete and published to Sites, GitHub Pages, and the existing Cloudflare Worker. This document supersedes the earlier PWA deployment instructions. The naming logic was not rewritten.
 
-## Current state
+## Current state and live locations
 
-**Repo is public** (https://github.com/megabomb420/namegen) since 2026-09-06; secret audit of full
-history was clean before flipping visibility. A **GitHub Pages mirror** of the PWA is being added:
-Pages serves only the static shell (built with `--mode pages`, base `/namegen/`, API base baked to
-the Worker), while the naming API and the DeepSeek key stay on the Cloudflare Worker. The Worker
-serves a narrow CORS allow-list (`CORS_ORIGINS` var = Pages origin) plus OPTIONS preflight for
-that origin; no wildcard CORS. This is a deliberate product decision to mirror the frontend on a
-second static host; the naming service remains single-origin-server.
+- Shared source of truth: https://github.com/megabomb420/namegen (public repository, `main`).
+- Public GitHub Pages website: https://megabomb420.github.io/namegen/
+- Sites website: https://namegen-studio.myby.chatgpt.site (owner-private at publication).
+- Existing Worker website and naming API: https://namegen.whip-blanket.workers.dev
+- Published implementation commit: `a88806c41a5d3b8b3b9cf8b351f37b433d8b4fee`. This handoff update is a subsequent documentation-only commit.
+- Local implementation branch: `codex/namegen-website`. The implementation was pushed to GitHub `main` without rewriting history.
+- GitHub Pages deployment succeeded: https://github.com/megabomb420/namegen/actions/runs/35275010870. Its workflow still has the historical display name “Deploy PWA mirror to GitHub Pages”; the output is now a website.
 
-## Current state
+React + TypeScript + Vite remain the frontend stack. Both static hosts call the existing Worker at `POST /api/generate`; the DeepSeek key, provider calls, validation, and admission controls remain server-side. Sites does not host a second naming backend. No accounts, cloud sync, or new product features were added.
 
-Standalone v0.1 PWA implemented and committed on `main`: React + TypeScript + Vite frontend, one Cloudflare Worker with Static Assets (`POST /api/generate`), ordinary server-side naming modules, versioned local/session storage, deterministic tests. No ChatGPT/MCP scaffolding. No accounts, no cloud sync, no history browser.
+## Redesign scope
 
-The ten material findings of the external review of `90b7619` are fixed, regression-tested, and recorded in `findings.md` (each with status). This pass changed generation behaviour (explicit `thinking: disabled`; `finish_reason` must be exactly `stop`), so a live creative-fixture rerun is required once a DeepSeek key is available.
+- Dark music-editorial presentation: warm ivory type, orange accents, locally hosted Manrope variable font, a spacious desktop layout, and responsive mobile layouts.
+- Top navigation replaces the fixed bottom app tab bar. Create and Shortlist remain the same two working views.
+- Existing controls retained: Track/Release/Artist, separate in-memory briefs, random briefs, language and length options, generation, batch navigation, exploration/refinement, both artist alias personas, saving/removing names, copying, and session clearing.
+- Results use numbered rows; Explore is a centered responsive dialog. Background interaction and scrolling are disabled while it is open; keyboard focus containment and return remain supported.
+- Result action menus now close on Escape or focus leaving the row.
+- Lightweight CSS entrance, hover, button sweep, and signal animations; reduced-motion preferences disable animation and transitions. No animation runtime was added.
+- Privacy and storage disclosures live in the footer. Shortlist data remains local to the browser.
 
-Repository layout (each part is one boundary; see *Boundaries* below):
+### PWA retirement
 
-- `shared/` — application contract types, limits, text/normalisation helpers (imported by both sides; no HTTP/DOM/node APIs).
-- `server/` — naming core: `config.ts`, `runtime-prompt.ts`, `validation.ts`, `selection.ts`, `provider.ts`, `service.ts`.
-- `worker/index.ts` — HTTP routing + admission (kill switch, config check, content-type, 24KB body cap, schema validation, Cloudflare rate-limit binding, sanitised mapping).
-- `src/` — PWA: `browser/` (storage, api client, clipboard), `state/` (framework-free `AppStore` + helpers), `ui/` (Create/Shortlist/Explore, a11y), `pwa.ts`, `main.tsx`.
-- `scripts/` — `make-icons.mjs` (dependency-free PNG icon generator, outputs committed), `fixtures.json` (12 creative fixtures), `fixtures.live.test.ts` (live runner, self-skips without a key).
-- `public/`, `index.html`, `vite.config.ts`, `vitest.config.ts`, `wrangler.jsonc`, `package.json`.
+`vite-plugin-pwa`, `workbox-window`, the manifest generation, update/install-style banners, and `src/pwa.ts` were removed. The site no longer promises offline page loading or installs itself as a PWA.
 
-## Run and deploy commands
+`src/retireServiceWorker.ts` unregisters only registrations whose script URL matches this site's former `sw.js`. `public/sw.js` is a retirement worker for previously installed clients: it activates, deletes matching scoped Workbox precaches, unregisters, and claims clients without forcing a reload. Do not delete it casually while old clients may still update from the PWA. This migration does not delete localStorage/sessionStorage. Existing icon assets and favicon remain in the repository.
+
+Storage is origin-specific: an existing shortlist on GitHub Pages stays on that origin; it does not automatically appear on Sites or the Worker origin. Loading a fresh website page requires a connection; a loaded page can still show local names when offline.
+
+## Repository boundaries
+
+- `shared/`: contracts, limits, Unicode normalization helpers; shared by browser and server.
+- `server/`: naming configuration, prompts, validation, provider invocation, filtering and selection. Unchanged by the redesign.
+- `worker/index.ts`: HTTP routing, CORS, kill switch, body/content validation, limiter admission and sanitized error mapping. `worker/rateLimit.ts` and `worker/window.ts` implement the hard request cap. Unchanged by the redesign.
+- `src/browser/`: API client, clipboard and versioned browser storage. Unchanged by the redesign.
+- `src/state/`: framework-free AppStore and state helpers. Unchanged by the redesign.
+- `src/ui/`: Create, Shortlist, Explore, result rows, icons and existing curated random briefs.
+- `src/styles.css`: responsive visual system and reduced-motion support.
+- `src/main.tsx`, `src/retireServiceWorker.ts`, `public/sw.js`: startup and retirement of the former PWA worker.
+- `public/fonts/`: Manrope Latin variable WOFF2 (24,836 bytes) and its OFL license; no third-party font request at runtime.
+- `vite.config.ts`: build base paths, API origin selection and development proxy.
+- `.openai/hosting.json`: existing Sites identity and static output directory. Preserve its `project_id`.
+- `.github/workflows/`: GitHub Pages build/deploy workflow, triggered by pushes to `main`.
+- `scripts/`: icon generation and opt-in live creative fixtures.
+
+## Run and build
 
 ```bash
-npm install
-
-# Local development (two terminals, or run each separately)
-npm run dev:api     # wrangler dev  → http://localhost:8787 (needs .dev.vars)
-npm run dev:web     # vite dev      → http://localhost:5173 (proxies /api → 8787)
-# Or serve the built app from the Worker alone: npm run build && npm run dev:api
-
-npm run typecheck   # tsc --noEmit over src/server/worker/shared
-npm test            # 105 tests, all passing (ordinary suite; live fixtures excluded)
-npm run build       # vite build + vite-plugin-pwa (generateSW) → dist/
-npm run icons       # regenerate public/icons/*.png (committed, no deps)
-npm run fixtures    # EXPLICIT opt-in only: runs the 12 creative fixtures twice against live
-                    # DeepSeek via vitest.fixtures.config.ts; skips itself without a key
-
-# Deploy (one Worker; config committed without secrets)
-npm run build
-wrangler secret put DEEPSEEK_API_KEY      # runtime secret
-wrangler deploy                           # serves dist/ as static assets + /api/* to the Worker
-# Optional kill switch (independent of code deploys):
-wrangler secret put GENERATION_DISABLED   # value "true" disables generation, app/shortlist keep working
+npm ci
+npm run dev:web       # Vite, port 5173; /api proxies to the LIVE Worker
+npm run typecheck     # TypeScript check
+npm test              # 131 deterministic tests in 11 files at the last verification
+npm run build         # Sites static build: root base, external Worker API
+npm run build:pages   # GitHub Pages: /namegen/ base, external Worker API
+npm run build:worker  # Worker website: root base, same-origin /api
+npm run preview      # Serves the last build; it does not implement a local naming API
+npm run icons        # Regenerates the retained PNG icons
+npm run fixtures     # Explicit opt-in: paid live creative suite; skips without a key
 ```
 
-Local secrets go in `.dev.vars` (template: `.dev.vars.example`, gitignored). Cloudflare needs a `ratelimits` binding whose `namespace_id` (`"1001"` in `wrangler.jsonc`, the documentation default) is an integer unique to the account — pick your own if you deploy several rate-limited Workers.
+All build targets overwrite `dist/`. Choose the correct target before publishing. For a local static preview with working generation, use a Sites build; a Worker build needs the Worker runtime to serve `/api`.
 
-## Boundaries (brief)
+**Development proxy change:** `npm run dev:web` now calls the production Worker through Vite. Generation/refinement/alias actions therefore use the real provider and production rate limits. `npm run dev:api` still starts Wrangler on port 8787 with `.dev.vars`, but Vite does not currently point at it. To work on the backend locally, temporarily set Vite's proxy target to `http://localhost:8787`, or run `npm run build:worker` and serve the built site with `npm run dev:api`.
 
-- **Naming core** (`server/`, ordinary modules, no browser/HTTP/React): owns request validation/normalisation, stable system prompt ([RUNTIME], §13 verbatim), provider settings and the single direct DeepSeek call (JSON object mode, 800-token ceiling, 20s abort), strict output validation/selection. No path here reads HTTP, cookies, storage or env; `service.runNamingRequest` is the reusable entry a future non-HTTP caller could translate without loopback.
-- **HTTP handler** (`worker/index.ts`): owns parsing, routing (unknown `/api/*` JSON 404, non-POST 405 + Allow), body cap enforced while reading, content-type, kill switch (`GENERATION_DISABLED`), secret/config presence, trusted client-IP (`cf-connecting-ip`), rate-limit binding before any paid call, and status/header mapping. It calls the naming core only after every admission check passes; there is no generation path that bypasses the kill switch or the limiter, and the limiter/API-key absence fails closed (503).
-- **Browser** (`src/browser/` + `src/state/` + `src/ui/`): versioned localStorage (prefs, shortlist ≤300) and sessionStorage (current/previous successful batches + ≤24 recently displayed exclusions); raw briefs, lyrics, refinement instructions, sheet and request state are memory-only. `AppStore` enforces one active request per client, epoch-guarded responses (cleared/superseded work can never reappear), explicit snapshot retries, and Explore as a purely local action. Application types in `shared/contracts.ts` are independent of provider response objects and of browser state.
+On this Windows machine the `npm`/`npx` launcher was broken during the work. The installed npm CLI worked when invoked through Node at `C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js`. Direct local Vite, TypeScript, Vitest and Wrangler entrypoints also worked. This was a local launcher issue, not a repository requirement; GitHub Actions completed `npm ci` and the Pages build normally.
 
-## Material decisions
+## Publication
 
-- Client sends only operation/mode/brief/language/length/seed/instruction/avoid (≤24); server derives model, counts (8→6, 6→4), prompt and token settings.
-- DeepSeek is called with thinking explicitly disabled (`thinking: { type: "disabled" }`) and only a `finish_reason` of exactly `stop` is accepted as completion; missing/null/`length`/`content_filter` outputs are unusable (never reconstructed, never auto-retried).
-- Failed/limited outputs never auto-retry at any layer; “Retry” resubmits the exact failed snapshot; editing and resubmitting is a new request.
-- Transport admission is a single lock (`requestActive`) held from submission until settlement; closing Explore or clearing the session invalidates the visible work but never permits a second concurrent paid request.
-- Completed refinement batches enter the same bounded (2) current/previous recovery list as generation batches, with originating metadata and names only — raw context/instructions are never persisted. Closing the sheet therefore never discards them.
-- Saved names are explorable locally: they keep their saved mode and use current language/length preferences; Explore shows the missing-brief notice and its bounded context field.
-- Comparison keys use NFKD + Unicode case folding (incl. ß→ss, final sigma→sigma) while displayed values keep their original spelling and diacritics (shared by server filtering, shortlist dedupe, and avoid-list management).
-- The privacy disclosure is scoped to the Namegen service (which stores nothing) and explicitly disclaims control over DeepSeek retention.
-- Generated icons come from a dependency-free script so the repo carries no image assets generator; PNGs are committed and self-checked on write.
-- Create keeps a **separate remembered brief draft per mode** (Track/Release/Artist), memory-only
-  per spec §7 (cleared by Clear working session, empty after reload). A **dice button** fills the
-  active brief with a random curated idea (`src/ui/randomBriefs.ts`, no warning-sign vocabulary).
-  The dice rolls from a genre-aware pool (hip-hop, wave, UK garage, future garage, drum & bass,
-  electronic, with dark/atmospheric/instrumental slants and a light unexpected twist on every
-  entry) — the old style/variant dropdowns were removed in favour of this. In Artist mode the
-  **Wu-style alias roller** (DeepSeek, thinking enabled) generates two-word stage names
-  via the real model: a server-side **alias** operation (artist-only, provider thinking ENABLED,
-  2500-token ceiling) returns six two-word stage-name candidates into the normal results list.
-  Two stable personas selectable by `aliasStyle`: `wu` (“Keeper of the Iron Tongue”) and `emo`
-  (“Nobody's Darling”, sad cloud-rap); real members/artists are excluded. A `task` line in every
-  payload names the active tab so the model knows what it produces. Thinking was trialled on
-  generate/refine and reverted the same day (live fixtures truncated at the ceiling, ~25 s/call —
-  evidence in creative results); it remains enabled for alias only. Deviations recorded in spec
-  §6.
-  Offline/online copy clarified: saved names and restored results open offline; generating names
-  always needs the internet (DeepSeek).
+### GitHub Pages
 
-## Checks performed
+Push the finished source to `origin/main`; the existing workflow installs dependencies, runs `npm run build:pages`, uploads `dist/`, and deploys Pages. Wait for a successful deployment and verify the actual page references the new hashed bundle. No secret belongs in the static build. The 2026-09-17 deployment returned HTTP 200 with the redesigned title and expected JavaScript asset.
 
-Automated (all deterministic, mocked, in CI form — `npm test`):
-- 117 passing tests + clean `tsc --noEmit` + production build. Coverage includes: surplus selection & discard; partial batches; zero-valid output; overlength (code-point) and control-character entries; Unicode duplicates incl. full case folding; malformed/truncated provider content and missing/null/non-`stop` finish reasons rejected, never reconstructed; extra-key/overlong-array rejection; avoid+seed exclusion; provider 429/5xx/network/timeout mapping; 24KB body cap (streamed); routing 404/405; content-type 415; kill switch; missing key and missing/broken limiter fail closed; Cloudflare and Durable-Object limiter denies → 429 + Retry-After (exact 3/min window unit-tested); stale-response and cleared-work races; single active request enforced at the transport layer (concurrent attempts refused until settlement); retry-snapshot identity; refinement batches entering the bounded recovery list and persisting without raw context; saved-name local exploration; session-clear failure surfacing; storage corruption/blocking/full; shortlist 300-cap without eviction; the main journey (Generate → Explore → Save → Reload → Copy); network-failure UI; Explore text editing keeping keyboard focus.
+### Cloudflare Worker
 
-Live provider (real DeepSeek key, 2026-09-06, via `npm run fixtures`):
-- Full pass 12/12 fixtures × 2 runs, zero unusable runs, zero truncation. Highest completion tokens 67 (Japanese; Arabic 61; English ≤ 59) — well under the 800 ceiling, so multilingual headroom is empirically confirmed for the JP/AR fixtures. Names, per-run lists, duplicate counts and quality observations are recorded in `creative-results-2026-09-06.md`; provisional read of the ≥75% plausible-candidate gate is met for every non-cliché batch, pending the human reviewer. One transient upstream anomaly (r-artist-spanish failing under sustained load, passing in isolation and in the recorded run) is documented there; the fixtures runner prints evidence before its assertions and fails loudly, and manual single-fixture rerun is the procedure. Live smoke of a blank generate via the full HTTP-less service path also succeeded.
+`npm run deploy` runs `build:worker` and `wrangler deploy`. Preserve the runtime secret and the existing limiter bindings. The final 2026-09-17 Worker deployment succeeded with version `0bf6232d-acbe-4731-a55c-48fd0c2852c0`.
 
-External-review regressions (`findings.md`): all ten findings are fixed and covered — outbound body asserts `thinking: { type: "disabled" }` (F1); focus effect keyed on sheet open/close with a UI test typing in the textarea (F2); transport lock held until settlement with concurrent-attempt tests (F3); disclosure copy scoped + DeepSeek retention disclaimed (F4); refine batches persisted into recovery with Previous/Back reachable (F5); saved-name Explore UI + store tests (F6); finish-reason null/missing/content_filter rejection tests (F7); Straße/STRASSE and final-sigma fold tests (F8); clear-session failure toast/notice tests (F9); fixtures moved to an explicit opt-in config that also fails when either run produces no usable names (F10).
+`wrangler.jsonc` now allows exactly these external browser origins:
 
-Local Worker smoke test (`wrangler dev`, workerd, real localhost HTTP, **no** DeepSeek key):
-- Static SPA served 200; `/api/unknown` JSON 404; non-POST 405 + Allow; `text/plain` 415; malformed JSON 400; valid request with a dummy key performed one real outbound provider attempt and returned the sanitised 502 `UPSTREAM_ERROR` (no raw provider body, no stack). Rate-limit binding simulated fine locally.
+- `https://megabomb420.github.io`
+- `https://namegen-studio.myby.chatgpt.site`
 
-Service-worker inspection (build output):
-- Precache contains only `index.html`, hashed JS/CSS, icons, favicon, manifest; navigation fallback to `/index.html` carries `denylist: [/^\/api\//]`; no runtime API caching. (Verified by reading `dist/sw.js`, not in a browser.)
+The Worker also accepts its own origin. Do not replace the allow-list with a wildcard. Sites-origin OPTIONS preflight was verified as 204 with the exact allowed origin.
 
-## Unverified / open (no credentials, devices, or account access)
+Production secrets are managed through Wrangler, not Git. Local secrets belong in ignored `.dev.vars` (template `.dev.vars.example`). `GENERATION_DISABLED=true` is the independent kill switch; missing API-key/limiter configuration fails closed.
 
-- **Live creative quality — human gate.** Live runs succeeded (evidence above and in
-  `creative-results-2026-09-06.md`), but the final §12 judgement (≥75% plausible candidates in
-  first batches, refinement relationship/instruction quality, repeated-root inspection) is a
-  human review of the recorded names that is still open. Rerun `npm run fixtures` after any
-  future prompt or generation-setting change.
-- **Cloudflare deployment — LIVE.** 2026-09-06: Worker + static assets live at
-  https://namegen.whip-blanket.workers.dev (wrangler OAuth, account “Whip Blanket”). Verified on
-  the deployed URL: SPA 200, `/api/*` JSON 404/405 behaviour, production kill switch returning
-  503 (staged rollout), then **generation enabled** (kill-switch secret deleted after the
-  maintainer confirmed DeepSeek spending limits are set) and verified live: two `POST
-  /api/generate` calls returned 200 with 6 valid names each and `cache-control: no-store`
-  (blank-brief and coastal-release examples). Kill switch can be re-armed at any time via
-  `wrangler secret put GENERATION_DISABLED` (value `true`).
+### Sites
 
-- **Hard request cap — Durable Object (authorized scope change, recorded in spec §9).** Live
-  testing showed the Cloudflare rate-limit *binding* (`RATE_LIMITER`) is **not enforced on the
-  account's free plan** (~36 rapid and paced requests, zero 429), so a single `NamingRateLimiter`
-  Durable Object now enforces the cap in application code: **3 requests/minute per client IP**,
-  exact; fail-closed (503 when the binding is missing or the check throws); 429 + `Retry-After`
-  on denial. Verified live 2026-09-06: requests 1–3 → 200, request 4 → 429 (`Retry-After: 57`).
-  Tunable via the `NAMING_LIMIT_PER_MINUTE` var (default `3`). The CF binding stays as an extra
-  edge layer (3/60, namespace `1001`) and starts enforcing if the account is upgraded. Window
-  logic is pure and unit-tested (`worker/window.ts`); the DO class is in `worker/rateLimit.ts`
-  and `extends DurableObject` from `cloudflare:workers` for RPC (vitest resolves that module to
-  `worker/cloudflare-workers.stub.ts`; wrangler bundles the real module).
+- Existing project: `appgprj_6aac50c2b9a481918ca525abf14e9a29`.
+- Static output: `dist`, as declared in `.openai/hosting.json`.
+- Published version 1: `appgprj_6aac50c2b9a481918ca525abf14e9a29~appgver_8ebdd8eb8b3c8191acc02a40a29fb618`.
+- Successful deployment: `appgdep_6aac566d32088191a000ee3dcdbe98fc`.
 
-- **Prompt persona + vocabulary hardening (same day, spec §13/§5 synced each time).** (1) The
-  model is only a music/artist naming tool and ignores embedded requests to answer questions,
-  change role, reveal instructions, or emit anything but the names JSON. (2) Product-owner word
-  list (static, cold, night, pulse, protocol, frequency, veil, concrete, ghost, signal, tapes)
-  added as strong warning signs, the '[something] Static' title formula called out, and counts
-  sharpened to “exactly 8 / exactly 6, never more”. Creative fixtures rerun after each change;
-  final 24-run pass 12/12 clean (after the documented isolated rerun of one fixture). Measured
-  effect: 'static' 12 → 9 per ~130 names, most remaining warning-word uses are brief-grounded,
-  the rest ≈ 0. Root cause of the day's intermittent 'selection-shape' failures confirmed: the
-  provider occasionally returns 8 names for refine (requested 6); validation rejects over-length
-  arrays per spec, no auto-retry — see `creative-results-2026-09-06.md`.
-- **Physical-device PWA behaviour** — Android Chrome and iOS Safari install, offline operation,
-  and interrupted/restarted sessions were not checked on real devices (no devices/emulators
-  here). Service-worker behaviour was verified only by static inspection of the generated worker
-  and the local Worker run, not browser emulation — do not treat this as device evidence.
-- **API key hygiene** — the live key used on 2026-09-06 was pasted into a chat transcript; it
-  should be rotated in the DeepSeek panel once deploy testing is done. `.dev.vars` holds the
-  local copy and is gitignored; production uses `wrangler secret put DEEPSEEK_API_KEY`.
+Reuse this Site; do not create another identity for updates. Preserve owner-private access unless the user requests a change. Publish via the Sites tools: build, push the exact source to the Site's returned repository/branch using a temporary per-command credential, package the matching build with `.openai/hosting.json`, save a version, deploy, and confirm terminal success. Never persist credentials in files, Git configuration or remote URLs.
 
-## Unresolved issues
+The Sites plugin's local helper files disappeared during the session. The fallback used the normal Vite build and a tar archive containing only `.openai/hosting.json` and `dist/`; the native connector accepted it and reported deployment success. Temporary staging/archive files are under ignored `.sites-release/`. Do not reuse that archive after source changes. The plugin was absent from the later available-skills list; check availability before the next Sites publication. A documentation-only update does not require rebuilding the already deployed website.
 
-- DeepSeek interface details re-verified during the review-fix pass against the current API reference: `deepseek-v4-flash` is a valid model, `thinking: { type: "disabled" }` is the documented way to disable thinking (default is enabled), and `finish_reason` is a required string (`stop | length | content_filter | tool_calls | insufficient_system_resource`). Remaining to verify live: JSON-mode interaction and observed multilingual token headroom at the 800-token ceiling.
-- Choose a per-account rate-limit `namespace_id` if the documentation default collides with other Workers under the account.
-- Nothing else known-open: all tracked requirements that can be exercised without external credentials are implemented and tested.
+## Naming behavior to preserve
 
-## Working between models
+- Generate asks for 8 candidates and displays up to 6; refine asks for 6 and displays up to 4; alias asks for 8 and displays up to 6.
+- Generate/refine keep thinking disabled with the configured 800-token ceiling. Alias uses thinking enabled, low effort and a 2,500-token ceiling, with the `wu` or `emo` persona. `server/service.ts` determines this per operation. The comment in `server/config.ts` claiming thinking is enabled for every operation is stale; the actual service routing takes precedence.
+- Only a provider finish reason of exactly `stop` is accepted. Invalid/truncated outputs are not reconstructed or automatically retried.
+- Failed requests retry only on explicit user action, using the failed snapshot. Editing and generating is a new request.
+- One request remains active until settlement, even when visible work is cleared or Explore is closed. Epoch checks prevent stale responses restoring invalidated state.
+- Refinement batches enter the same bounded recovery history as generation. Raw briefs and instructions remain memory-only; successful name batches and metadata are restored from sessionStorage.
+- Shortlist is versioned localStorage, capped at 300 without silently evicting entries. Save, copy and opening Explore do not themselves call the provider.
+- Comparison keys use NFKD and Unicode case folding; display spelling/diacritics are preserved.
+- The authoritative cap is the existing Durable Object: 3 requests/minute per client IP, fail-closed on missing/broken binding; denied requests return 429 and Retry-After. The Cloudflare rate-limit binding remains an additional layer. The original live cap test is recorded in the historical notes below.
+- NameGen keeps no server copy of briefs/results. This does not assert anything about DeepSeek's own retention.
 
-GitHub remains the shared source of truth. Pull before starting, read `spec.md` and this handoff, and commit/push completed changes together with an updated handoff. Do not force-push shared history. Update the “Unverified” sections above when live checks are performed, and keep mocked/live/device evidence separate.
+## Verification evidence
+
+### 2026-09-17 redesign and publication
+
+- All 131 deterministic tests in 11 files passed, including a final run after PWA dependency removal. TypeScript checking passed.
+- Sites and Pages production builds succeeded. Sites bundle: approximately 71.79 KB gzip JavaScript, 5.46 KB gzip CSS, plus the 24.8 KB local font. These are transfer-size measurements, not a Lighthouse or real-device performance score.
+- Browser layout checks at 1440×1000, 768×1024, 390×844 and 320×740. A narrow-screen overflow was fixed; the final 320px check found no horizontally clipped controls. These are desktop browser viewport checks, not physical-device tests.
+- Real generation through the local frontend and production Worker returned six names. Refining “Sawtooth Sunrise” returned four alternatives. Saving, copying with success feedback, reload persistence, random briefs, Artist tools and options were checked. The test-created saved entry was removed afterward; the pre-existing saved entry was retained.
+- No browser errors were reported in the inspected error log. Existing automated tests cover retry behavior, request locking, storage failures and focus preservation.
+- Production dependency audit reported zero known vulnerabilities. The all-dependency install output reported three high-severity development dependency advisories; remediation was not part of this frontend pass.
+- Sites native deployment status was `succeeded`; the live Sites interface was not independently exercised end-to-end. Worker publication succeeded and the Sites CORS preflight was checked. GitHub Pages workflow succeeded and its deployed HTML/new bundle were verified.
+- No full live creative-fixture rerun was done for this frontend-only change.
+
+### Retained historical evidence: 2026-09-06
+
+- `creative-results-2026-09-06.md` contains the full 12-fixture × 2-run provider pass, including a transient upstream anomaly and its isolated rerun. Human naming-quality approval remains distinct from technical success.
+- `findings.md` records ten fixed external-review findings and their regression evidence.
+- Original deployed Worker smoke checks covered static 200, API routing/errors, the kill switch, and real blank/coastal-release generation.
+- The hard limiter was added after live tests found the approximate Cloudflare binding unenforced on the account's free plan. The Durable Object was then verified live: first three requests 200, fourth 429 with Retry-After. It was preserved, not stress-tested again in this redesign.
+
+## Remaining checks and known limitations
+
+- Human creative-quality review remains open. Rerun the explicitly paid live fixtures after future prompt/provider-setting changes.
+- Physical Android/iOS browser behavior, old installed-PWA migration and offline recovery have not been verified on real devices. PWA installation is no longer a product requirement.
+- The earlier handoff recorded that a DeepSeek key had been pasted into a chat and should be rotated. Rotation was not verified during this redesign; preserve this unresolved operational item without copying the key into documentation.
+- The GitHub workflow emitted Node 20 action-runtime deprecation warnings, but its Node 24 build and deployment succeeded. Modernizing action versions can be a separate maintenance change.
+- `spec.md` still contains historical PWA/frontend assumptions. Use this handoff and current source for the redesigned presentation/deployment behavior; preserve the established naming contracts. Do not silently treat old installation/offline UI requirements as current.
+
+## Working between sessions
+
+Pull GitHub before starting; read this handoff, `spec.md`, and relevant source. Keep changes focused, preserve naming behavior, and update the handoff with completed work. Commit/push finished changes together with their documentation; do not force-push shared history. Distinguish mocked tests, real provider checks, deployment status, viewport testing and physical-device evidence. Never commit secrets or temporary publication artifacts.
