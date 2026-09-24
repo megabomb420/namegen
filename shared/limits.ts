@@ -21,3 +21,17 @@ export const ALBUM_TRACKS = { requested: 12, display: 10 } as const;
 
 /** Maximum track titles a replaceTrack request may carry as context. */
 export const TRACKS_MAX = 12;
+
+/**
+ * The explicit word cap for generated names (the length slider). `null` (or an
+ * absent field) means no cap; the interface's "Any length" stop sends nothing.
+ * The alias personas keep their own two-word shape and never receive a cap.
+ */
+export const MAX_WORDS_LIMIT = { min: 1, max: 6 } as const;
+
+/**
+ * Extra candidates to request when a word cap is set. The cap is enforced by
+ * filtering, not by hope: with a bigger pool the displayed batch still fills
+ * after over-cap candidates are dropped.
+ */
+export const WORD_CAP_HEADROOM = { names: 12, tracks: 16 } as const;

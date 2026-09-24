@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import type { AppStore } from '../state/appStore';
 import { entryTitle, formatEntry } from '../state/helpers';
@@ -70,7 +71,7 @@ export function ShortlistView({ state, store }: ShortlistViewProps) {
         </div>
       ) : (
         <ul className="saved-list">
-          {items.map((item) => <SavedRow key={item.id} item={item} store={store} />)}
+          {items.map((item, index) => <SavedRow key={item.id} item={item} store={store} index={index} />)}
         </ul>
       )}
 
@@ -83,10 +84,10 @@ export function ShortlistView({ state, store }: ShortlistViewProps) {
 }
 
 /** One entry: a name, or a whole release with its tracks in a compact list. */
-function SavedRow({ item, store }: { item: SavedEntry; store: AppStore }) {
+function SavedRow({ item, store, index }: { item: SavedEntry; store: AppStore; index: number }) {
   const title = entryTitle(item);
   return (
-    <li className="saved-row">
+    <li className="saved-row" style={{ '--i': String(index) } as CSSProperties}>
       <div className="saved-main">
         <button
           type="button"

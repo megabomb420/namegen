@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { caseFold, countCodePoints, hasControlCharacter, nameKey, normalizeDisplayWhitespace } from './text';
+import { caseFold, countCodePoints, countWords, hasControlCharacter, nameKey, normalizeDisplayWhitespace } from './text';
 
 describe('nameKey case folding', () => {
   it('folds ß to ss so Straße and STRASSE compare equal', () => {
@@ -30,5 +30,18 @@ describe('nameKey case folding', () => {
     expect(hasControlCharacter('ok')).toBe(false);
     expect(hasControlCharacter('bad\u0007')).toBe(true);
     expect(normalizeDisplayWhitespace('  Neon   Lights ')).toBe('Neon Lights');
+  });
+});
+
+describe('countWords', () => {
+  it('counts words the way the prompt defines them', () => {
+    expect(countWords('Lime Dust')).toBe(2);
+    expect(countWords('Last Shift, Lime Works')).toBe(4);
+    expect(countWords('Sump/Water Rising')).toBe(3);
+    expect(countWords('Well-Kept')).toBe(1);
+    expect(countWords("Nobody's Coat")).toBe(2);
+    expect(countWords('   ')).toBe(0);
+    expect(countWords('4:40')).toBe(1);
+    expect(countWords('最後のバス')).toBe(1);
   });
 });

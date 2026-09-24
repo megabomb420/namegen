@@ -268,6 +268,7 @@ describe('release albums', () => {
       mode: 'release',
       language: 'English',
       length: 'auto',
+      maxWords: null,
       displayedAt: 1000,
     });
   });
@@ -320,6 +321,7 @@ describe('release albums', () => {
       language: 'English',
       length: 'auto',
       avoid: ['Album One', 'First', 'Second', 'Third'],
+      maxWords: null,
     });
 
     await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
@@ -792,13 +794,42 @@ describe('alias operation', () => {
     await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
   });
 
+  it('passes the length slider through as a word cap and keeps it', async () => {
+    const h = makeHarness({ submitImpl: async () => successNames(['A', 'B', 'C', 'D', 'E', 'F']) });
+    h.store.setMaxWords(3);
+    expect(h.prefsWrites).toEqual([{ version: 1, language: 'English', length: 'auto', maxWords: 3 }]);
+    h.store.generate();
+    expect(h.submit.mock.calls[0][0]).toMatchObject({ maxWords: 3 });
+    await vi.waitFor(() => expect(h.store.getState().pending).toBeNull());
+    // The cap is remembered on the batch, so exploring that batch refines with it.
+    const batch = h.store.getState().batches[0];
+    if (batch.kind !== 'names') throw new Error('expected a names batch');
+    expect(batch.maxWords).toBe(3);
+    h.store.openExplore(batch.names[0], batch);
+    expect(h.store.getState().explore?.maxWords).toBe(3);
+  });
+
+  it('clamps a slider value into the shared range and treats null as no cap', () => {
+    const h = makeHarness();
+    h.store.setMaxWords(9);
+    expect(h.store.getState().maxWords).toBe(6);
+    h.store.setMaxWords(2.7);
+    expect(h.store.getState().maxWords).toBe(2);
+    h.store.setMaxWords(null);
+    expect(h.store.getState().maxWords).toBeNull();
+    h.store.generate();
+    // null travels as an explicit "no cap": the server drops the field from the
+    // provider payload, so the model keeps its own judgement.
+    expect(h.submit.mock.calls[0][0]).toMatchObject({ maxWords: null });
+  });
+
   it('writes preferences without the removed persona field', () => {
     const h = makeHarness();
     h.store.setLanguage('Japanese');
     h.store.setLength('short');
     expect(h.prefsWrites).toEqual([
-      { version: 1, language: 'Japanese', length: 'auto' },
-      { version: 1, language: 'Japanese', length: 'short' },
+      { version: 1, language: 'Japanese', length: 'auto', maxWords: null },
+      { version: 1, language: 'Japanese', length: 'short', maxWords: null },
     ]);
     expect(h.store.getState()).not.toHaveProperty('aliasStyle');
   });

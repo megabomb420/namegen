@@ -43,3 +43,16 @@ export function caseFold(value: string): string {
 export function nameKey(value: string): string {
   return caseFold(value).trim().replace(/\s+/gu, ' ');
 }
+
+/**
+ * Words in a name, by the same rule the runtime prompt states: a run of letters
+ * or digits, with hyphens, apostrophes, colons and dots holding one word
+ * together ("Well-Kept", "4:40", "A.M.") while spaces, commas and slashes
+ * separate. Used to enforce the length slider.
+ */
+const WORD_PATTERN = /[\p{L}\p{N}]+(?:['\u2019_:.\-][\p{L}\p{N}]+)*/gu;
+
+export function countWords(value: string): number {
+  const matches = value.normalize('NFKC').match(WORD_PATTERN);
+  return matches === null ? 0 : matches.length;
+}

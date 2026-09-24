@@ -34,6 +34,11 @@ export interface NamingRequest {
   language?: string;
   /** Name length guidance. Defaults to auto. */
   length?: LengthPref;
+  /**
+   * Hard word cap for every name in this request (1–6). Absent or null means
+   * no cap; the alias personas ignore it, because their shape is the alias.
+   */
+  maxWords?: number | null;
   /** Refinement seed: an existing generated name. Required for refine. */
   seed?: string;
   /** Latest refinement instruction (empty means "more like this"). */
@@ -55,6 +60,8 @@ export interface NormalizedRequest {
   brief: string;
   language: string;
   length: LengthPref;
+  /** Resolved word cap: an integer 1–6, or null for no cap. */
+  maxWords: number | null;
   seed: string | null;
   instruction: string;
   avoid: string[];

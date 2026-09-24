@@ -281,7 +281,7 @@ describe('result mapping', () => {
   });
 
   it('returns the album body for a release-mode request, no-store cached', async () => {
-    const tracks = Array.from({ length: 12 }, (_, i) => `Track ${i + 1}`);
+    const tracks = Array.from({ length: 12 }, (_, i) => `Tide ${i + 1}`);
     vi.stubGlobal('fetch', vi.fn(async () => providerAlbum('Tide Book', tracks)));
     const response = await handleRequest(
       apiRequest({ operation: 'generate', mode: 'release', brief: 'slow coastal techno' }),

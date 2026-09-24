@@ -68,7 +68,8 @@ export function NameRow({ name, mode, saved, onOpen, onToggleSave, onCopy, repla
           onClick={onOpen}
           aria-label={`Explore “${name}” for more like this`}
         >
-          <span className="name-text">{name}</span>
+          {/* Keyed by the name: a replacement remounts the title and replays its mark. */}
+          <span key={name} className="name-text">{name}</span>
           <ChevronRightIcon size={18} />
         </button>
         <div className="name-row-meta" aria-hidden="true">

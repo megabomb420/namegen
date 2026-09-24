@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 import { BRIEF_MAX, INSTRUCTION_MAX } from '../../shared/limits';
 import { countCodePoints } from '../../shared/text';
@@ -169,10 +170,10 @@ export function ExploreSheet({ state, store }: ExploreSheetProps) {
             <h3>Ideas</h3>
             {explore.partial === true && <p className="partial-note">A smaller batch this time.</p>}
             <ul className="name-list">
-              {explore.alternatives.map((name) => {
+              {explore.alternatives.map((name, index) => {
                 const saved = findSaved(state.shortlist, name, explore.mode) !== -1;
                 return (
-                  <li key={`${explore.seed}-${name}`}>
+                  <li key={`${explore.seed}-${name}`} style={{ '--i': String(index) } as CSSProperties}>
                     <NameRow
                       name={name}
                       mode={explore.mode}

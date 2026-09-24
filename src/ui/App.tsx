@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { AppStore } from '../state/appStore';
 import { CreateView } from './CreateView';
 import { ExploreSheet } from './ExploreSheet';
@@ -7,6 +7,63 @@ import { StarIcon } from './icons';
 
 interface AppProps { store: AppStore }
 
+/**
+ * Ambient backdrop: a halo that trails a fine pointer, plus static grain and a
+ * vignette. Decoration only — it never takes pointer events, and it stands
+ * still (no listener at all) when the visitor prefers reduced motion.
+ */
+function Ambient() {
+  const layerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (layer === null || typeof window.matchMedia !== 'function') return;
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const fine = window.matchMedia('(pointer: fine)');
+    let frame = 0;
+    let x = 0;
+    let y = 0;
+    const apply = () => {
+      frame = 0;
+      layer.style.setProperty('--glow-x', `${x}px`);
+      layer.style.setProperty('--glow-y', `${y}px`);
+    };
+    const onMove = (event: PointerEvent) => {
+      x = event.clientX;
+      y = event.clientY;
+      if (frame === 0) frame = window.requestAnimationFrame(apply);
+    };
+    const sync = () => {
+      window.removeEventListener('pointermove', onMove);
+      if (frame !== 0) {
+        window.cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      layer.classList.remove('ambient-live');
+      if (motion.matches || !fine.matches) return;
+      window.addEventListener('pointermove', onMove, { passive: true });
+      layer.classList.add('ambient-live');
+    };
+    sync();
+    motion.addEventListener('change', sync);
+    fine.addEventListener('change', sync);
+    return () => {
+      motion.removeEventListener('change', sync);
+      fine.removeEventListener('change', sync);
+      window.removeEventListener('pointermove', onMove);
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  return (
+    <div className="ambient" ref={layerRef} aria-hidden="true">
+      <span className="ambient-halo" />
+      <span className="ambient-grain" />
+      <span className="ambient-vignette" />
+    </div>
+  );
+}
+
 export function App({ store }: AppProps) {
   const state = useSyncExternalStore(
     (onChange) => store.subscribe(onChange),
@@ -14,6 +71,7 @@ export function App({ store }: AppProps) {
   );
   return (
     <div className="app">
+      <Ambient />
       <a className="skip-link" href="#main">Skip to content</a>
       <div className="site-body" inert={state.explore !== null}>
         <header className="site-header">
@@ -27,7 +85,7 @@ export function App({ store }: AppProps) {
               aria-current={state.tab === 'create' ? 'page' : undefined} onClick={() => store.setTab('create')}>Create</button>
             <button type="button" className={state.tab === 'shortlist' ? 'nav-link nav-on' : 'nav-link'}
               aria-current={state.tab === 'shortlist' ? 'page' : undefined} onClick={() => store.setTab('shortlist')}>
-              <StarIcon size={16} /> Shortlist <span className="badge">{state.shortlist.length}</span>
+              <StarIcon size={16} /> Shortlist <span className="badge" key={state.shortlist.length}>{state.shortlist.length}</span>
             </button>
           </nav>
         </header>

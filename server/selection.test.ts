@@ -9,6 +9,7 @@ function request(overrides: Partial<NormalizedRequest> = {}): NormalizedRequest 
     brief: '',
     language: 'English',
     length: 'auto',
+    maxWords: null,
     seed: null,
     instruction: '',
     avoid: [],
@@ -30,8 +31,8 @@ const names = (n: string[]) => JSON.stringify({ names: n });
 
 const album = (title: unknown, tracks: unknown) => JSON.stringify({ title, tracks });
 
-/** Track titles "Track 1"…"Track n" — distinct, valid and easy to count. */
-const trackList = (n: number) => Array.from({ length: n }, (_, i) => `Track ${i + 1}`);
+/** Album track titles "Tide 1"…"Tide n" — distinct, valid and easy to count. */
+const trackList = (n: number) => Array.from({ length: n }, (_, i) => `Tide ${i + 1}`);
 
 function selectRelease(content: string, input: Partial<AlbumSelectionInput> = {}) {
   return selectAlbum({
@@ -106,24 +107,24 @@ describe('selectNames', () => {
   });
 
   it('normalises display whitespace without stripping diacritics', () => {
-    const outcome = select(names(['  Neon   Lights ', 'Café']));
+    const outcome = select(names(['  Tide   Line ', 'Café']));
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.names).toEqual(['Neon Lights', 'Café']);
+    expect(outcome.names).toEqual(['Tide Line', 'Café']);
   });
 
   it('deduplicates with compatibility normalisation, case folding and whitespace folding', () => {
-    const outcome = select(names(['Café', 'CAFÉ', 'Two  Words', 'Two Words', 'ﬁlm', 'film', 'Neon', 'neon']));
+    const outcome = select(names(['Café', 'CAFÉ', 'Two  Words', 'Two Words', 'ﬁlm', 'film', 'Brass', 'brass']));
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     // First readable spelling wins; display values keep their original form.
-    expect(outcome.names).toEqual(['Café', 'Two Words', 'ﬁlm', 'Neon']);
+    expect(outcome.names).toEqual(['Café', 'Two Words', 'ﬁlm', 'Brass']);
     expect(outcome.stats.duplicates).toBe(4);
   });
 
   it('removes names matching the avoid list and the refinement seed', () => {
-    const outcome = select(names(['Cold Front', 'Warm Static', 'Cold  Front', 'Keep This']), {
-      request: request({ avoid: ['Cold Front'], seed: 'Warm Static' }),
+    const outcome = select(names(['Cold Front', 'Brass Rung', 'Cold  Front', 'Keep This']), {
+      request: request({ avoid: ['Cold Front'], seed: 'Brass Rung' }),
     });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
@@ -268,6 +269,104 @@ describe('selectAlbum', () => {
     if (!outcome.ok) return;
     expect(outcome.title).toBe('Tide Book');
     expect(outcome.tracks).toEqual(['Harbor Lights', 'Salt Air']);
-    expect(outcome.stats).toEqual({ received: 7, invalid: 1, duplicates: 3, excluded: 1, valid: 2 });
+    expect(outcome.stats).toEqual({ received: 7, invalid: 1, duplicates: 3, excluded: 1, generic: 0, overCap: 0, valid: 2 });
+  });
+
+  it('drops a cliché album title instead of shipping it', () => {
+    const outcome = selectRelease(album('Neon Dreams', trackList(12)));
+    expect(outcome).toMatchObject({ ok: false, reason: 'generic' });
+  });
+
+  it('keeps a cliché album title the brief explicitly asked for', () => {
+    const outcome = selectRelease(album('Neon Dreams', trackList(12)), {
+      request: request({ operation: 'generate', mode: 'release', brief: 'an album about neon dreams and night drives' }),
+    });
+    expect(outcome).toMatchObject({ ok: true });
+  });
+
+  it('drops clichés and placeholders from the track list and keeps the rest in order', () => {
+    const tracks = ['Tide 1', 'Interlude', 'Tide 2', 'Harbor Static', 'Tide 3', 'Echoes of Home', ...trackList(6).map((_, i) => `Ferry ${i + 7}`)];
+    const outcome = selectRelease(album('Tide Book', tracks));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.tracks).not.toContain('Interlude');
+    expect(outcome.tracks).not.toContain('Harbor Static');
+    expect(outcome.tracks).not.toContain('Echoes of Home');
+    expect(outcome.tracks[0]).toBe('Tide 1');
+    expect(outcome.stats.generic).toBe(3);
+  });
+});
+
+describe('the word cap inside selection', () => {
+  const capped = (maxWords: number) => request({ maxWords });
+
+  it('drops over-cap names and keeps the rest in order', () => {
+    const outcome = select(names(['Lime Dust', 'Last Shift at the Lime Works', 'Quarry Flood', 'Rope Still on the Winch']), {
+      request: capped(2),
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.names).toEqual(['Lime Dust', 'Quarry Flood']);
+    expect(outcome.stats.overCap).toBe(2);
+    expect(outcome.partial).toBe(true);
+  });
+
+  it('counts punctuation as a separator and hyphens as a joint', () => {
+    const outcome = select(names(['Well-Kept, Damp', 'Salt Air', 'Two Words Here']), { request: capped(2) });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.names).toEqual(['Well-Kept, Damp', 'Salt Air']);
+    expect(outcome.stats.overCap).toBe(1);
+  });
+
+  it('fails the batch honestly when nothing fits the cap', () => {
+    const outcome = select(names(['Last Shift at the Lime Works', 'Rope Still on the Winch']), { request: capped(1) });
+    expect(outcome).toMatchObject({ ok: false, reason: 'empty', stats: { overCap: 2 } });
+  });
+
+  it('applies the cap to an album title and to its tracks', () => {
+    const badTitle = selectRelease(album('Last Shift at the Lime Works', trackList(12)), { request: capped(2) });
+    expect(badTitle).toMatchObject({ ok: false, reason: 'over-cap' });
+
+    const tracks = ['Lime Dust', 'Rope Still on the Winch', ...trackList(10)];
+    const outcome = selectRelease(album('Waterline', tracks), { request: capped(2) });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.tracks).not.toContain('Rope Still on the Winch');
+    expect(outcome.stats.overCap).toBe(1);
+  });
+
+  it('leaves an uncapped request exactly as it was', () => {
+    const outcome = select(names(['Last Shift at the Lime Works']));
+    expect(outcome).toMatchObject({ ok: true, stats: { overCap: 0 } });
+  });
+});
+
+describe('the cliché gate inside selectNames', () => {
+  it('drops the clichés and reports how many it removed', () => {
+    const outcome = select(names(['Quarry Ledger', 'Midnight', 'Pump House', 'Neon Dreams', 'Last Bus Home', 'Salt Air']));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.names).toEqual(['Quarry Ledger', 'Pump House', 'Last Bus Home', 'Salt Air']);
+    expect(outcome.stats).toMatchObject({ generic: 2, valid: 4 });
+    expect(outcome.partial).toBe(true);
+  });
+
+  it('keeps a batch usable when every candidate is a cliché', () => {
+    const outcome = select(names(['Midnight', 'Echoes', 'Shadows', 'Dreams']));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.names).toEqual(['Midnight', 'Echoes', 'Shadows']);
+    expect(outcome.stats.generic).toBe(1);
+  });
+
+  it('licenses a cliché the brief itself asked for', () => {
+    const outcome = select(names(['Midnight', 'Quarry Ledger']), {
+      request: request({ brief: 'something that sounds like midnight on a warm street' }),
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.names).toEqual(['Midnight', 'Quarry Ledger']);
+    expect(outcome.stats.generic).toBe(0);
   });
 });

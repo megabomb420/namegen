@@ -43,7 +43,7 @@ function albumFetch(title: unknown, tracks: unknown[], options: EnvelopeOptions 
   return vi.fn(async () => albumResponse(title, tracks, options));
 }
 
-const albumTracks = (n: number) => Array.from({ length: n }, (_, i) => `Track ${i + 1}`);
+const albumTracks = (n: number) => Array.from({ length: n }, (_, i) => `Tide ${i + 1}`);
 
 afterEach(() => {
   vi.useRealTimers();
@@ -142,7 +142,7 @@ describe('runNamingRequest', () => {
   });
 
   it('uses the emo cloud-rap persona when aliasStyle is emo', async () => {
-    const fetchImpl = okFetch(['Wilted Crown', 'Soft Static', 'Rain Room', 'Pillow Case', 'Low Orbit', 'Mourning Dew', 'Clouded', 'Last Bus Home']);
+    const fetchImpl = okFetch(['Wilted Crown', 'Freezer Burn', 'Rain Room', 'Pillow Case', 'Low Orbit', 'Mourning Dew', 'Clouded', 'Last Bus Home']);
     const result = await runNamingRequest(
       { operation: 'alias', mode: 'artist', aliasStyle: 'emo', brief: 'sad boy who records at 3am' },
       requestDeps(fetchImpl as unknown as typeof fetch),
@@ -403,6 +403,77 @@ describe('runNamingRequest', () => {
     const result = await pending;
     expect(result).toMatchObject({ ok: false, code: 'UPSTREAM_TIMEOUT', retryable: true });
     expect(hanging).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the word cap on naming operations and never to the alias personas', async () => {
+    const naming = okFetch(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+    await runNamingRequest({ ...validRequest, maxWords: 2 }, requestDeps(naming as unknown as typeof fetch));
+    const [, init] = naming.mock.calls[0];
+    const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+    expect(payload.maxWords).toBe(2);
+    // The cap is restated on the task line the model reads, not only in the
+    // system prompt: live runs ignored a two-word cap that lived only there.
+    expect(payload.task).toBe(
+      'You are naming a single track. Hard limit, over every other preference: every name must be at most 2 words — shorten the idea, never the limit.',
+    );
+
+    // A capped request asks for a bigger pool than it displays, so the batch
+    // still fills after over-cap names are filtered out.
+    expect(payload.count).toBe(12);
+
+    const plain = okFetch(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+    await runNamingRequest(validRequest, requestDeps(plain as unknown as typeof fetch));
+    const [, plainInit] = plain.mock.calls[0];
+    const plainPayload = JSON.parse(JSON.parse(String(plainInit?.body)).messages[1].content);
+    expect(plainPayload).not.toHaveProperty('maxWords');
+    expect(plainPayload.count).toBe(8);
+
+    const cappedAlbum = albumFetch('Waterline', albumTracks(12));
+    await runNamingRequest({ ...releaseRequest, maxWords: 2 }, requestDeps(cappedAlbum as unknown as typeof fetch));
+    const [, albumInit] = cappedAlbum.mock.calls[0];
+    const albumPayload = JSON.parse(JSON.parse(String(albumInit?.body)).messages[1].content);
+    expect(albumPayload.count).toBe(16);
+
+    const alias = okFetch(['Iron Raven', 'Sable Oracle', 'Copper Blade', 'Velvet Candle', 'Ash Pilgrim', 'Cedar Warden', 'Typhoon Nomad', 'Onyx Alchemist']);
+    await runNamingRequest(
+      { operation: 'alias', mode: 'artist', aliasStyle: 'wu', brief: 'dusty drums', maxWords: 1 },
+      requestDeps(alias as unknown as typeof fetch),
+    );
+    const [, aliasInit] = alias.mock.calls[0];
+    const aliasPayload = JSON.parse(JSON.parse(String(aliasInit?.body)).messages[1].content);
+    expect(aliasPayload).not.toHaveProperty('maxWords');
+    expect(aliasPayload).not.toHaveProperty('length');
+  });
+
+  it('drops the clichés a provider still wrote and reports how many went', async () => {
+    const events: unknown[] = [];
+    const fetchImpl = okFetch(['Iron Raven', 'Midnight', 'Sable Oracle', 'Neon Dreams', 'Copper Blade', 'Cedar Warden', 'Typhoon Nomad', 'Onyx Alchemist']);
+    const result = await runNamingRequest(validRequest, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      apiKey: 'k',
+      log: (e) => events.push(e),
+    });
+    expect(result).toMatchObject({ ok: true, kind: 'names', partial: false });
+    if (!result.ok || result.kind !== 'names') return;
+    expect(result.names).toEqual(['Iron Raven', 'Sable Oracle', 'Copper Blade', 'Cedar Warden', 'Typhoon Nomad', 'Onyx Alchemist']);
+    const event = events[0] as { outcome: string; stats: { generic: number; valid: number }; kept: number };
+    expect(event.outcome).toBe('success');
+    expect(event.stats.generic).toBe(2);
+    expect(event.kept).toBe(6);
+  });
+
+  it('refuses a whole album whose title is a cliché instead of shipping it', async () => {
+    const events: unknown[] = [];
+    const fetchImpl = albumFetch('Neon Dreams', albumTracks(12));
+    const result = await runNamingRequest(releaseRequest, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      apiKey: 'k',
+      log: (e) => events.push(e),
+    });
+    expect(result).toMatchObject({ ok: false, code: 'UNUSABLE_OUTPUT', retryable: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const event = events[0] as { outcome: string };
+    expect(event.outcome).toBe('selection-generic');
   });
 
   it('reports sanitised service telemetry through the log callback', async () => {

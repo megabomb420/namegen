@@ -20,13 +20,13 @@ beforeEach(() => {
 
 describe('preferences', () => {
   it('round-trips valid versioned preferences', () => {
-    expect(persistPrefs({ version: 1, language: 'Japanese', length: 'short' })).toBe(true);
-    expect(loadPrefs()).toEqual({ version: 1, language: 'Japanese', length: 'short' });
+    expect(persistPrefs({ version: 1, language: 'Japanese', length: 'short', maxWords: 3 })).toBe(true);
+    expect(loadPrefs()).toEqual({ version: 1, language: 'Japanese', length: 'short', maxWords: 3 });
   });
 
   it('writes no alias persona field', () => {
-    persistPrefs({ version: 1, language: 'English', length: 'auto' });
-    expect(window.localStorage.getItem(PREFS_KEY)).toBe('{"version":1,"language":"English","length":"auto"}');
+    persistPrefs({ version: 1, language: 'English', length: 'auto', maxWords: null });
+    expect(window.localStorage.getItem(PREFS_KEY)).toBe('{"version":1,"language":"English","length":"auto","maxWords":null}');
   });
 
   it('ignores an alias persona left behind by an older build', () => {
@@ -34,12 +34,12 @@ describe('preferences', () => {
       PREFS_KEY,
       JSON.stringify({ version: 1, language: 'English', length: 'auto', aliasStyle: 'emo' }),
     );
-    expect(loadPrefs()).toEqual({ version: 1, language: 'English', length: 'auto' });
+    expect(loadPrefs()).toEqual({ version: 1, language: 'English', length: 'auto', maxWords: null });
     window.localStorage.setItem(
       PREFS_KEY,
       JSON.stringify({ version: 1, language: 'Japanese', length: 'short', aliasStyle: 'grunge' }),
     );
-    expect(loadPrefs()).toEqual({ version: 1, language: 'Japanese', length: 'short' });
+    expect(loadPrefs()).toEqual({ version: 1, language: 'Japanese', length: 'short', maxWords: null });
   });
 
   it('returns null for missing, corrupt or wrong-version data', () => {

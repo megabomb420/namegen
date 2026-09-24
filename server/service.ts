@@ -5,7 +5,7 @@
  * dependencies; the public result is the application contract only.
  */
 import type { NamingResult, NormalizedRequest } from '../shared/contracts';
-import { ALBUM_TRACKS } from '../shared/limits';
+import { ALBUM_TRACKS, WORD_CAP_HEADROOM } from '../shared/limits';
 import { isAlbumRequest, REQUEST_COUNTS, THINKING_SETTINGS } from './config';
 import { ALIAS_SYSTEM, ALIAS_SYSTEM_BRIEF, ALIAS_SYSTEM_EMO } from './alias-prompt';
 import { callChatCompletions, type DeepSeekUsage, type ProviderDeps } from './provider';
@@ -22,7 +22,9 @@ export interface ServiceReport {
     | 'provider-envelope'
     | 'provider-truncated'
     | 'selection-empty'
-    | 'selection-shape';
+    | 'selection-shape'
+    | 'selection-generic'
+    | 'selection-over-cap';
   httpStatus?: number;
   latencyMs?: number;
   usage?: DeepSeekUsage;
@@ -67,10 +69,25 @@ function taskLabel(request: NormalizedRequest): string {
     : `You are naming ${subject}.`;
 }
 
-function buildPayload(request: NormalizedRequest): Record<string, unknown> {
+/**
+ * The task line the model reads in the user message. The word cap is restated
+ * here as well as in the runtime prompt, because a limit buried in a long
+ * system prompt is followed less reliably than one attached to the task; live
+ * runs returned three-word names for a two-word cap until this was added.
+ */
+function taskWithWordCap(request: NormalizedRequest): string {
+  const task = taskLabel(request);
+  if (request.maxWords === null || request.operation === 'alias') return task;
+  const unit = request.maxWords === 1 ? 'word' : 'words';
+  return `${task} Hard limit, over every other preference: every name must be at most ${request.maxWords} ${unit} — shorten the idea, never the limit.`;
+}
+
+function buildPayload(request: NormalizedRequest, count: number): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     operation: request.operation,
-    task: taskLabel(request),
+    task: taskWithWordCap(request),
+    /** How many entries this request expects, in the terms the shape uses. */
+    count,
     mode: request.mode,
     brief: request.brief,
     avoid: request.avoid,
@@ -95,6 +112,9 @@ function buildPayload(request: NormalizedRequest): Record<string, unknown> {
   payload.language = request.language;
   if (request.operation !== 'alias') {
     payload.length = request.length;
+    // The length slider travels as an explicit cap, and only when the person
+    // set one: an absent field means the model keeps its own judgement.
+    if (request.maxWords !== null) payload.maxWords = request.maxWords;
   }
   return payload;
 }
@@ -122,6 +142,12 @@ export async function runNamingRequest(raw: unknown, deps: NamingServiceDeps): P
 export async function runValidatedNamingRequest(request: NormalizedRequest, deps: NamingServiceDeps): Promise<NamingResult> {
   const { apiKey, fetchImpl, now, log } = deps;
   const counts = REQUEST_COUNTS[request.operation];
+  // A word cap is enforced by filtering, so a capped request asks for a bigger
+  // pool than it displays: the batch still fills after over-cap names are gone.
+  const capped = request.maxWords !== null && request.operation !== 'alias';
+  const requestedNames = capped ? Math.max(counts.requested, WORD_CAP_HEADROOM.names) : counts.requested;
+  const requestedTracks = capped ? Math.max(ALBUM_TRACKS.requested, WORD_CAP_HEADROOM.tracks) : ALBUM_TRACKS.requested;
+  const count = isAlbumRequest(request) ? requestedTracks : requestedNames;
 
   const providerDeps: ProviderDeps = { fetchImpl, apiKey, ...(now !== undefined ? { now } : {}) };
   // Naming requests (generate, refine, replaceTrack and album requests) keep
@@ -135,7 +161,7 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
       : request.aliasStyle === 'brief'
         ? ALIAS_SYSTEM_BRIEF
         : ALIAS_SYSTEM;
-  const result = await callChatCompletions(buildPayload(request), providerDeps, isAlias
+  const result = await callChatCompletions(buildPayload(request, count), providerDeps, isAlias
     ? {
         systemPrompt: aliasSystem,
         thinking: THINKING_SETTINGS.thinking,
@@ -202,13 +228,20 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
       if (isAlbumRequest(request)) {
         const album = selectAlbum({
           content: result.content,
-          requestedTracks: ALBUM_TRACKS.requested,
+          requestedTracks,
           displayTracks: ALBUM_TRACKS.display,
           request,
         });
         if (!album.ok) {
           log?.({
-            outcome: album.reason === 'empty' ? 'selection-empty' : 'selection-shape',
+            outcome:
+              album.reason === 'empty'
+                ? 'selection-empty'
+                : album.reason === 'generic'
+                  ? 'selection-generic'
+                  : album.reason === 'over-cap'
+                    ? 'selection-over-cap'
+                    : 'selection-shape',
             latencyMs: result.latencyMs,
             usage: result.usage ?? undefined,
             stats: album.stats,
@@ -233,7 +266,7 @@ export async function runValidatedNamingRequest(request: NormalizedRequest, deps
 
       const selection = selectNames({
         content: result.content,
-        requested: counts.requested,
+        requested: requestedNames,
         display: counts.display,
         request,
       });

@@ -13,6 +13,7 @@ import {
   INSTRUCTION_MAX,
   LANGUAGE_MAX,
   NAME_MAX,
+  MAX_WORDS_LIMIT,
   TRACKS_MAX,
 } from '../shared/limits';
 import { countCodePoints, hasControlCharacter, nameKey } from '../shared/text';
@@ -64,6 +65,7 @@ export function normalizeRequest(raw: unknown): RequestValidationResult {
     'brief',
     'language',
     'length',
+    'maxWords',
     'seed',
     'instruction',
     'avoid',
@@ -99,6 +101,22 @@ export function normalizeRequest(raw: unknown): RequestValidationResult {
       return fail('Length must be "auto" or "short".');
     }
     length = raw.length as LengthPref;
+  }
+
+  // The length slider. Bounded, integral and explicit: a fractional or
+  // out-of-range cap is a client bug, never something to round off silently.
+  let maxWords: number | null = null;
+  if (raw.maxWords !== undefined && raw.maxWords !== null) {
+    const value = raw.maxWords;
+    if (
+      typeof value !== 'number' ||
+      !Number.isInteger(value) ||
+      value < MAX_WORDS_LIMIT.min ||
+      value > MAX_WORDS_LIMIT.max
+    ) {
+      return fail(`maxWords must be a whole number between ${MAX_WORDS_LIMIT.min} and ${MAX_WORDS_LIMIT.max}.`);
+    }
+    maxWords = value;
   }
 
   let seed: string | null = null;
@@ -204,6 +222,7 @@ export function normalizeRequest(raw: unknown): RequestValidationResult {
     brief,
     language,
     length,
+    maxWords,
     seed,
     instruction,
     avoid,

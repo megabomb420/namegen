@@ -6,17 +6,22 @@
  */
 import type { NormalizedRequest } from '../shared/contracts';
 import { NAME_MAX } from '../shared/limits';
-import { countCodePoints, hasControlCharacter, nameKey, normalizeDisplayWhitespace } from '../shared/text';
+import { countCodePoints, countWords, hasControlCharacter, nameKey, normalizeDisplayWhitespace } from '../shared/text';
+import { applyQualityGate, assessTitle } from './title-quality';
 
 export interface SelectionStats {
   received: number;
   invalid: number;
   duplicates: number;
   excluded: number;
+  /** Candidates the cliché gate dropped: generic words, pairs, templates, fillers, repeated roots. */
+  generic: number;
+  /** Candidates dropped for exceeding the request's word cap. */
+  overCap: number;
   valid: number;
 }
 
-export type SelectionReason = 'not-json' | 'wrong-shape' | 'empty';
+export type SelectionReason = 'not-json' | 'wrong-shape' | 'empty' | 'generic' | 'over-cap';
 
 export type SelectionOutcome =
   | { ok: true; names: string[]; partial: boolean; stats: SelectionStats }
@@ -55,7 +60,23 @@ export interface AlbumSelectionInput {
 }
 
 function zeroStats(): SelectionStats {
-  return { received: 0, invalid: 0, duplicates: 0, excluded: 0, valid: 0 };
+  return { received: 0, invalid: 0, duplicates: 0, excluded: 0, generic: 0, overCap: 0, valid: 0 };
+}
+
+/**
+ * The anti-collapse floors for the cliché gate. Requesting 8 names and
+ * displaying 6 means a dropped reserve costs nothing visible, but a batch must
+ * never become a failed request: three names a person can refine beat an error.
+ */
+const NAME_GATE_FLOOR = 3;
+const TRACK_GATE_FLOOR = 6;
+
+/**
+ * The licence the cliché gate consults: what the person wrote themselves. A
+ * refinement instruction counts as their words for the batch it produced.
+ */
+function gateContext(request: NormalizedRequest, albumTrack = false) {
+  return { brief: `${request.brief} ${request.instruction}`, albumTrack };
 }
 
 /**
@@ -164,11 +185,28 @@ export function selectNames(input: SelectionInput): SelectionOutcome {
     }
     remaining.push(name);
   }
-  stats.valid = remaining.length;
+  // The length slider is a filter, not a request: an over-cap name is dropped
+  // like an invalid one, and a capped request asked the provider for a bigger
+  // pool so the displayed batch still fills.
+  const cap = request.maxWords;
+  const withinCap = cap === null
+    ? remaining
+    : remaining.filter((name) => {
+        if (countWords(name) <= cap) return true;
+        stats.overCap += 1;
+        return false;
+      });
+  if (withinCap.length === 0) return { ok: false, reason: 'empty', stats };
 
-  if (remaining.length === 0) return { ok: false, reason: 'empty', stats };
+  // Drop what the prompt asked the model not to write. The floor is the
+  // anti-collapse rule: three keepers a person can refine beat a failed request.
+  const gated = applyQualityGate(withinCap, gateContext(request), NAME_GATE_FLOOR);
+  stats.generic = gated.dropped;
+  stats.valid = gated.kept.length;
 
-  const names = remaining.slice(0, display);
+  if (gated.kept.length === 0) return { ok: false, reason: 'empty', stats };
+
+  const names = gated.kept.slice(0, display);
   return { ok: true, names, partial: names.length < display, stats };
 }
 
@@ -197,6 +235,18 @@ export function selectAlbum(input: AlbumSelectionInput): AlbumSelectionOutcome {
 
   const title = normalizeEntry(rawTitle);
   if (title === null) return { ok: false, reason: 'wrong-shape', stats };
+  // The title is the album's identity: a cliché title is not repaired, replaced
+  // or kept — the response is unusable, exactly like a malformed shape.
+  if (assessTitle(title, gateContext(request)) !== null) {
+    stats.received = arrayLengthOf(parsed, 'tracks');
+    return { ok: false, reason: 'generic', stats };
+  }
+  // The cap covers the title too: it is the name of the record, and a title that
+  // breaks the rule the person set cannot be shipped as if it fitted.
+  if (request.maxWords !== null && countWords(title) > request.maxWords) {
+    stats.received = arrayLengthOf(parsed, 'tracks');
+    return { ok: false, reason: 'over-cap', stats };
+  }
   stats.received = rawTracks.length;
 
   const excludedKeys = exclusionKeys(request);
@@ -221,10 +271,24 @@ export function selectAlbum(input: AlbumSelectionInput): AlbumSelectionOutcome {
     seen.add(key);
     tracks.push(track);
   }
-  stats.valid = tracks.length;
+  const cap = request.maxWords;
+  const withinCap = cap === null
+    ? tracks
+    : tracks.filter((track) => {
+        if (countWords(track) <= cap) return true;
+        stats.overCap += 1;
+        return false;
+      });
+  if (withinCap.length === 0) return { ok: false, reason: 'empty', stats };
 
-  if (tracks.length === 0) return { ok: false, reason: 'empty', stats };
+  // Track titles run through the same gate with the placeholder rule on: an
+  // album whose second track is called "Interlude" is a tracklist, not a record.
+  const gated = applyQualityGate(withinCap, gateContext(request, true), TRACK_GATE_FLOOR);
+  stats.generic = gated.dropped;
+  stats.valid = gated.kept.length;
 
-  const displayed = tracks.slice(0, displayTracks);
+  if (gated.kept.length === 0) return { ok: false, reason: 'empty', stats };
+
+  const displayed = gated.kept.slice(0, displayTracks);
   return { ok: true, title, tracks: displayed, partial: displayed.length < displayTracks, stats };
 }

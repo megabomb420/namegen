@@ -12,10 +12,14 @@ export const MODE_OPTIONS: { value: Mode; label: string }[] = [
   { value: 'artist', label: 'Artist' },
 ];
 
-export const LENGTH_OPTIONS: { value: 'auto' | 'short'; label: string }[] = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'short', label: 'Short' },
-];
+/**
+ * The length slider's readout. `null` is the leftmost stop and means the model
+ * keeps its own judgement; a number is a hard cap on words per name.
+ */
+export function wordLengthLabel(maxWords: number | null): string {
+  if (maxWords === null) return 'Any length';
+  return `Up to ${maxWords} ${maxWords === 1 ? 'word' : 'words'}`;
+}
 
 export interface AliasCard {
   value: AliasStyle;

@@ -1,4 +1,6 @@
+import type { CSSProperties } from 'react';
 import { countCodePoints } from '../../shared/text';
+import { MAX_WORDS_LIMIT } from '../../shared/limits';
 import type { AppStore } from '../state/appStore';
 import { activeBrief, findSaved } from '../state/helpers';
 import type { AlbumBatch, AppState, DisplayBatch } from '../state/types';
@@ -9,9 +11,9 @@ import {
   ARTIST_BRIEF_ACTION,
   EMPTY_BRIEF_NOTE,
   MODE_OPTIONS,
-  LENGTH_OPTIONS,
   MODE_LABELS,
   albumMeta,
+  wordLengthLabel,
 } from './labels';
 import { pickRandomBrief } from './randomBriefs';
 import { ShuffleIcon, ArrowIcon, StarFilledIcon, StarIcon } from './icons';
@@ -56,8 +58,19 @@ export function CreateView({ state, store }: CreateViewProps) {
       <div className="studio-layout">
         <div className="studio-intro">
           <p className="eyebrow"><span className="small-cross" aria-hidden="true">✳</span> A naming studio for music</p>
-          <h1>You make<br /> the sound.<br /><span>Find its name.</span></h1>
-          <p className="intro-copy">From the first demo to your next identity.<br /> Find names that feel like your music.</p>
+          {/* Each headline line sits in its own mask; --i keeps one stagger order across the intro. */}
+          <h1>
+            <span className="hero-line" style={{ '--i': '0' } as CSSProperties}><span className="hero-line-inner">You make</span></span>
+            <br />
+            <span className="hero-line" style={{ '--i': '1' } as CSSProperties}><span className="hero-line-inner"> the sound.</span></span>
+            <br />
+            <span className="hero-line" style={{ '--i': '2' } as CSSProperties}><span className="hero-line-inner hero-line-accent">Find its name.</span></span>
+          </h1>
+          <p className="intro-copy">
+            <span className="hero-line" style={{ '--i': '3' } as CSSProperties}><span className="hero-line-inner">From the first demo to your next identity.</span></span>
+            <br />
+            <span className="hero-line" style={{ '--i': '4' } as CSSProperties}><span className="hero-line-inner"> Find names that feel like your music.</span></span>
+          </p>
           <div className="intro-bottom"><Signal /><span>Tracks. Releases. Artists.<br /><b>Something worth calling your own.</b></span></div>
         </div>
         <div className="studio-form">
@@ -86,14 +99,21 @@ export function CreateView({ state, store }: CreateViewProps) {
           </div>
           <div className="options">
             <button type="button" className="options-toggle" aria-expanded={state.optionsOpen} aria-controls="naming-options" onClick={() => store.toggleOptions()}>
-              <span>Options <span className="options-summary">{state.language || 'English'} · {state.length === 'short' ? 'Short' : 'Auto'} length</span></span><span aria-hidden="true">{state.optionsOpen ? '−' : '+'}</span>
+              <span>Options <span className="options-summary">{state.language || 'English'} · {wordLengthLabel(state.maxWords)}</span></span><span aria-hidden="true">{state.optionsOpen ? '−' : '+'}</span>
             </button>
             {state.optionsOpen && <div id="naming-options" className="options-panel">
               <div className="option-fields">
                 <div className="field"><label htmlFor="language">Language</label><input id="language" type="text" inputMode="text" value={state.language} onChange={(event) => store.setLanguage(event.target.value)} placeholder="English" autoComplete="off" /></div>
-                <div className="field"><span className="field-label">Length</span><div className="mode-group" role="group" aria-label="Name length">
-                  {LENGTH_OPTIONS.map((option) => <button key={option.value} type="button" className={`segment${state.length === option.value ? ' segment-on' : ''}`} aria-pressed={state.length === option.value} onClick={() => store.setLength(option.value)}>{option.label}</button>)}
-                </div></div>
+                <div className="field field-wide"><span className="field-label" id="length-label">Title length</span>
+                  <div className="slider-row">
+                    <input id="max-words" type="range" min={0} max={MAX_WORDS_LIMIT.max} step={1}
+                      value={state.maxWords ?? 0} aria-labelledby="length-label"
+                      aria-valuetext={wordLengthLabel(state.maxWords)} aria-describedby="length-hint"
+                      onChange={(event) => { const next = Number(event.target.value); store.setMaxWords(next === 0 ? null : next); }} />
+                    <output className="slider-value" htmlFor="max-words">{wordLengthLabel(state.maxWords)}</output>
+                  </div>
+                  <p className="micro-note" id="length-hint">{state.maxWords === null ? 'Names come back however long they need to be.' : `Every name stays within ${state.maxWords} ${state.maxWords === 1 ? 'word' : 'words'}.`}</p>
+                </div>
               </div>
               <button type="button" className="quiet-danger" onClick={() => store.clearWorkingSession()}>Clear working session</button>
               <p className="micro-note">Removes this session&apos;s results and drafts. Your shortlist is kept.</p>
@@ -112,7 +132,7 @@ export function CreateView({ state, store }: CreateViewProps) {
             {ALIAS_CARDS.map((card) => {
               const needsBrief = card.value === 'brief' && briefEmpty;
               const cardBusy = aliasBusy && state.pending?.aliasStyle === card.value;
-              return <article key={card.value} className="alias-card">
+              return <article key={card.value} className={`alias-card${needsBrief ? ' is-locked' : ''}`}>
                 <h3 className="alias-card-title">{card.title}</h3>
                 <p className="alias-card-blurb">{card.blurb}</p>
                 {needsBrief && <p className="alias-card-note">{EMPTY_BRIEF_NOTE}</p>}
@@ -144,7 +164,7 @@ export function CreateView({ state, store }: CreateViewProps) {
 
 function ResultSet({ batch, state, store }: { batch: DisplayBatch; state: AppState; store: AppStore }) {
   if (batch.kind === 'album') return <AlbumResults batch={batch} state={state} store={store} />;
-  return <ul className="name-list">{batch.names.map((name) => <li key={`${batch.id}-${name}`}><NameRow name={name} mode={batch.mode} saved={findSaved(state.shortlist, name, batch.mode) !== -1} onOpen={() => store.openExplore(name, batch)} onToggleSave={() => store.toggleSave(name, batch.mode)} onCopy={() => void store.copyName(name)} /></li>)}</ul>;
+  return <ul className="name-list">{batch.names.map((name, index) => <li key={`${batch.id}-${name}`} style={{ '--i': String(index) } as CSSProperties}><NameRow name={name} mode={batch.mode} saved={findSaved(state.shortlist, name, batch.mode) !== -1} onOpen={() => store.openExplore(name, batch)} onToggleSave={() => store.toggleSave(name, batch.mode)} onCopy={() => void store.copyName(name)} /></li>)}</ul>;
 }
 
 /** One release: the album title row, then its numbered, replaceable tracks. */
@@ -174,7 +194,7 @@ function AlbumResults({ batch, state, store }: { batch: AlbumBatch; state: AppSt
         const error = failure !== null && failure.batchId === batch.id && failure.index === index
           ? { message: failure.message, retryable: failure.retryable }
           : null;
-        return <li key={`${batch.id}-track-${index}`}>
+        return <li key={`${batch.id}-track-${index}`} style={{ '--i': String(index) } as CSSProperties}>
           <NameRow name={track} mode="release" saved={findSaved(state.shortlist, track, 'release') !== -1}
             onOpen={() => store.openExplore(track, batch)}
             onToggleSave={() => store.toggleSave(track, 'release')}

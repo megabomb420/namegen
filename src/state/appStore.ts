@@ -6,7 +6,7 @@
  * the shortlist/preferences to localStorage through injected adapters.
  */
 import type { AliasStyle, LengthPref, Mode, NamingRequest } from '../../shared/contracts';
-import { BRIEF_MAX, LANGUAGE_MAX } from '../../shared/limits';
+import { MAX_WORDS_LIMIT, BRIEF_MAX, LANGUAGE_MAX } from '../../shared/limits';
 import { countCodePoints } from '../../shared/text';
 import { UNREADABLE_OUTPUT_MESSAGE, type WireOutcome } from '../browser/api';
 import type { StoredBatch, StoredPrefs, StoredSession } from '../browser/storage';
@@ -37,7 +37,7 @@ export interface StoreDeps {
   later: (fn: () => void, ms: number) => unknown;
 }
 
-const DEFAULT_PREFS = { language: 'English', length: 'auto' as LengthPref };
+const DEFAULT_PREFS = { language: 'English', length: 'auto' as LengthPref, maxWords: null as number | null };
 
 /** A replacement target plus the exact snapshot to resubmit if it fails. */
 interface ReplacementRetry {
@@ -64,6 +64,7 @@ function restoreBatch(batch: StoredBatch, id: string): DisplayBatch {
       mode: 'release',
       language: batch.language,
       length: batch.length,
+      maxWords: batch.maxWords ?? null,
       brief: null,
       displayedAt: batch.displayedAt,
     };
@@ -76,6 +77,7 @@ function restoreBatch(batch: StoredBatch, id: string): DisplayBatch {
     mode: batch.mode,
     language: batch.language,
     length: batch.length,
+    maxWords: batch.maxWords ?? null,
     brief: null,
     displayedAt: batch.displayedAt,
   };
@@ -91,6 +93,7 @@ function displayToStored(batch: DisplayBatch): StoredBatch {
       mode: 'release',
       language: batch.language,
       length: batch.length,
+      maxWords: batch.maxWords ?? null,
       displayedAt: batch.displayedAt,
     };
   }
@@ -101,6 +104,7 @@ function displayToStored(batch: DisplayBatch): StoredBatch {
     mode: batch.mode,
     language: batch.language,
     length: batch.length,
+    maxWords: batch.maxWords ?? null,
     displayedAt: batch.displayedAt,
   };
 }
@@ -129,6 +133,7 @@ export class AppStore {
       briefByMode: { track: '', release: '', artist: '' },
       language: savedPrefs.language,
       length: savedPrefs.length,
+      maxWords: savedPrefs.maxWords,
       optionsOpen: false,
       batches,
       viewIndex: Math.max(0, batches.length - 1),
@@ -183,14 +188,26 @@ export class AppStore {
     const trimmed = language.trim();
     const persistable = trimmed !== '' && countCodePoints(trimmed) <= LANGUAGE_MAX;
     if (persistable) {
-      this.persistPrefs({ language: trimmed, length: this.state.length });
+      this.persistPrefs({ language: trimmed, length: this.state.length, maxWords: this.state.maxWords });
     }
     this.set({ language });
   }
 
   setLength(length: LengthPref): void {
-    this.persistPrefs({ language: this.state.language, length });
+    this.persistPrefs({ language: this.state.language, length, maxWords: this.state.maxWords });
     this.set({ length });
+  }
+
+  /**
+   * The length slider. null is the "Any length" stop and sends no cap at all;
+   * anything else is clamped to the shared 1–6 range before it is stored.
+   */
+  setMaxWords(maxWords: number | null): void {
+    const value = maxWords === null
+      ? null
+      : Math.max(MAX_WORDS_LIMIT.min, Math.min(MAX_WORDS_LIMIT.max, Math.trunc(maxWords)));
+    this.persistPrefs({ language: this.state.language, length: this.state.length, maxWords: value });
+    this.set({ maxWords: value });
   }
 
   private persistPrefs(prefs: Omit<StoredPrefs, 'version'>): boolean {
@@ -274,6 +291,7 @@ export class AppStore {
             brief: trimmedBrief,
             language: trimmedLanguage,
             length: s.length,
+            maxWords: s.maxWords,
             avoid: [...s.avoidNames],
           };
     void this.runRequest(snapshot, s.mode === 'artist' ? 'alias' : 'generate');
@@ -322,6 +340,7 @@ export class AppStore {
       brief: batch.brief ?? '',
       language: batch.language,
       length: batch.length,
+      maxWords: batch.maxWords ?? null,
       avoid: [...s.avoidNames],
     };
     void this.runRequest(snapshot, 'replaceTrack', { batchId, trackIndex: index });
@@ -406,6 +425,7 @@ export class AppStore {
                 mode: 'release',
                 language,
                 length,
+                maxWords: snapshot.maxWords ?? null,
                 brief,
                 displayedAt: this.deps.now(),
               }
@@ -417,6 +437,7 @@ export class AppStore {
                 mode: snapshot.mode,
                 language,
                 length,
+                maxWords: snapshot.maxWords ?? null,
                 brief,
                 displayedAt: this.deps.now(),
               };
@@ -493,6 +514,7 @@ export class AppStore {
         mode: snapshot.mode,
         language: snapshot.language ?? explore.language,
         length: snapshot.length ?? explore.length,
+        maxWords: snapshot.maxWords ?? explore.maxWords,
         brief: snapshot.brief ?? '',
         displayedAt: this.deps.now(),
       };
@@ -563,6 +585,7 @@ export class AppStore {
       mode: batch.mode,
       language: batch.language,
       length: batch.length,
+      maxWords: batch.maxWords ?? null,
       brief: batch.brief,
       contextDraft: '',
       instruction: '',
@@ -588,6 +611,7 @@ export class AppStore {
       mode: entry.mode,
       language: this.state.language,
       length: this.state.length,
+      maxWords: this.state.maxWords,
       brief: null,
       contextDraft: '',
       instruction: '',
@@ -798,6 +822,7 @@ function toRefinePayload(
       mode: explore.mode,
       language: explore.language,
       length: explore.length,
+      maxWords: explore.maxWords,
       seed: explore.seed,
       brief,
       instruction: explore.instruction,

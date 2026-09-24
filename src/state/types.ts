@@ -32,6 +32,8 @@ interface BatchBase {
   partial: boolean;
   language: string;
   length: LengthPref;
+  /** Word cap that produced this batch; null when the person set none. */
+  maxWords: number | null;
   /** Originating brief snapshot. Memory only; null after a restore. */
   brief: string | null;
   displayedAt: number;
@@ -83,6 +85,7 @@ export interface ExploreState {
   mode: Mode;
   language: string;
   length: LengthPref;
+  maxWords: number | null;
   /** Originating brief snapshot of the explored batch; null when restored. */
   brief: string | null;
   /** Bounded brief field used when the originating brief is unavailable. */
@@ -121,6 +124,8 @@ export interface AppState {
   briefByMode: Record<Mode, string>;
   language: string;
   length: LengthPref;
+  /** The length slider: an integer 1–6, or null for "Any length". */
+  maxWords: number | null;
   optionsOpen: boolean;
   batches: DisplayBatch[];
   /** Index into `batches` of the batch shown on the Create screen. */

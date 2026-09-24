@@ -35,10 +35,30 @@ describe('normalizeRequest', () => {
       brief: '',
       language: 'English',
       length: 'auto',
+      maxWords: null,
       seed: null,
       instruction: '',
       avoid: [],
     });
+  });
+
+  it('accepts an explicit word cap between 1 and 6 and nothing else', () => {
+    for (const maxWords of [1, 2, 3, 4, 5, 6]) {
+      const result = normalizeRequest({ ...base, maxWords });
+      expect(result.ok, `maxWords ${maxWords}`).toBe(true);
+      if (!result.ok) continue;
+      expect(result.value.maxWords).toBe(maxWords);
+    }
+    // Absent and explicit null both mean "no cap"; anything else is a client bug.
+    expect(normalizeRequest({ ...base }).ok).toBe(true);
+    expect(normalizeRequest({ ...base, maxWords: null })).toMatchObject({ ok: true, value: { maxWords: null } });
+    for (const bad of [0, 7, -1, 2.5, '3', true, {}]) {
+      const result = normalizeRequest({ ...base, maxWords: bad });
+      expect(result, `maxWords ${String(bad)}`).toMatchObject({
+        ok: false,
+        message: 'maxWords must be a whole number between 1 and 6.',
+      });
+    }
   });
 
   it('rejects a brief over the code-point limit (astral-safe)', () => {

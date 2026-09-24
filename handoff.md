@@ -56,6 +56,56 @@ Method: `npm run dev:web` at `http://localhost:5173` in a headless Chromium, dri
 
 This is viewport evidence from a headless desktop Chromium, not physical-device evidence: the paid creative-fixture pass, real Android/iOS behaviour, and the delivered-notification path remain open as listed below.
 
+## 2026-09-24 sixth pass: names that cannot come out generic
+
+The owner's brief for this pass was blunt: the site must stop producing generic titles, and it should look like a studio rather than a form. This section covers the naming half; the motion half follows.
+
+**The prompt now names the clichés instead of hinting at them.** `server/runtime-prompt.ts` (and `spec.md` §13, which is kept byte-identical to it) replaced "warning signs, not banned words" with a closed list of forbidden constructions: a bare mood noun; an atmospheric adjective welded to one of those nouns; `[something] Static` / `Static [something]`; `Echoes of …`, `Shadows of …`, `Whispers of …`, `Fragments of …`, `Memories of …`, `Songs of …`; `… in the Dark`; `… at Midnight`; a title whose final word is Night, Nights, Dream, Dreams, Echo, Echoes, Shadow, Shadows, Whispers, Horizon or Static; and placeholders (`Intro`, `Interlude`, `Outro`, `Skit`, `Untitled`, `Track 3`). Substituting a synonym into a banned construction is stated to be the same title. A construction is allowed only when the brief or instruction uses that exact word for that exact idea, and the batch may not repeat a watched root. The three alias personas carry the same one-sentence ban.
+
+**A prompt is a request; the gate is a guarantee.** `server/title-quality.ts` is a new pure module that decides whether a candidate is a cliché, and `server/selection.ts` applies it to every batch after dedupe and exclusions:
+
+- Reasons: `generic-word`, `generic-pair`, `generic-template`, `filler-title` (album tracks only) and `repeated-root` (a watched root the batch already used).
+- The **brief licence** decides: any word the person themselves wrote in the brief or the refinement instruction licenses that exact idea, so "recorded at midnight" still gets Midnight.
+- Names: offenders are dropped in place, counted in the new `stats.generic`, and the batch becomes `partial` — never retried, never repaired.
+- **Anti-collapse floors**: the gate can never turn a usable batch into a failed request. Fewer than three surviving names (six tracks) tops the batch back up from the earliest rejects in their original positions, and a batch smaller than the floor passes through untouched.
+- Album titles are the album's identity: a cliché title is not repaired or kept, the response is `UNUSABLE_OUTPUT` and logs `selection-generic`. Cliché *tracks* are dropped like names.
+- Boundary check against real work: the test suite pins 32 names captured live from the deployed Worker (blank and vague briefs) and asserts the gate does not flag any of them. The `the X of Y` template was narrowed for exactly this reason — "The Weight of Small Rooms" is a real provider output, and the first version of the rule killed it.
+
+**Tests**: `npm test` is **222 tests in 12 files** (192 before this pass), `npm run typecheck` clean. Fixtures that used `Track 1…n`, `Neon`, `Neon Lights` and `Soft Static` as neutral filler were renamed rather than weakening the rules: a fixture must not be a cliché the product now refuses.
+
+**Live evidence, same four prompts before and after.** Two runs against the deployed Worker, one either side of the prompt change, both from the pages origin with a browser user agent (Cloudflare rejects a bare `python-urllib` UA with 403):
+
+| prompt | before | after |
+| --- | --- | --- |
+| quarry brief, track | Last Bell at the Lime Works · Quarry Water Rising · Radio in the Changing Room … | Flood Line at Kettleby Pit · Last Whistle, Lime Works · Kettleby Quarry, Tuesday 4:40 · Nobody Clocked Out the Pump House … |
+| quarry brief, release | title *Waterline at the Lime Works* | title *Last Shift at Bracken Quarry*, tracks *Nome and Son, Lime Burners Since 1911* · *Diving the Old Canteen* · *The Truck That Wouldn't Start in Spring* … |
+| blank brief | Paper Cup Overpass · Grit in the Ice Machine · Two Left Boots | Back Porch Radio · Two Dollars in Dimes · The Iced Tea Incident · Extra Pickles on the Side |
+| vague brief ("sad"), release | title *The Weight of Small Rooms* | title *The House on Custer Street*, tracks *The Dog Knows Which Chair Is Empty* · *I Mowed the Lawn Because You Liked It* · *Soup for One, Eaten Standing* … |
+
+Honest reading of that table: the pre-change prompt was already specific when it had a brief to hold on to, and the worst offenders never appeared in these four samples. What the pass actually changes is the tail — the reserves, the blank and vague briefs, and the guarantee itself, which is now deterministic instead of hoped for. The gate flags **none** of the 32 names captured from the before-run, which is the point: it raises the floor without arguing with good work.
+
+**The motion half: the site now moves like a studio.** Same pass, no product behaviour changed, all of it CSS-first with no new runtime dependency.
+
+- **Hero**: each headline line rises out of its own overflow mask (70ms + 90ms/line), then the eyebrow, both intro lines and the signal row follow on the same index — instead of one uniform fade of the whole block.
+- **Ambient**: a pointer-tracked halo (rAF-throttled, 0.9s ease-out trail), static inline-SVG grain at 0.06 opacity and a vignette, mounted above the page background and below the content so the grain can never modulate text contrast. Under reduced motion the listener is never attached, not merely disabled.
+- **Signal**: idle bars breathe with a slow container glow; busy keeps the recognisable `frequency` bars and adds a scan line across the results rule.
+- **Rows**: a batch enters in sequence (45ms steps, capped at twelve so a 300-entry shortlist never waits), hover and `:focus-visible` lift the row 2px, draw a left accent edge and reveal the chevron; the save star fires a short burst that ends at opacity 0.
+- **Album**: the title row draws a permanent accent rule, the title underlines on hover, and a replaced track remounts with a one-shot accent flash so the swap is visible without a toast.
+- **Cards and sheets**: alias cards lift 3px with an accent edge; the locked brief card stays visibly locked; the Explore backdrop blurs 7px and the panel enters on a 16px + 0.985 scale step; the toast slides up without a layout shift.
+- **With `prefers-reduced-motion: reduce`**: measured on the running app, **zero** elements report an animation and **zero** report a non-zero transition, while the hero, rows and intro all stay at opacity 1 with no transform — the existing blanket rule remains the single switch, and every new effect declares its natural state as the CSS base with `backwards` fill.
+- No horizontal overflow at 320, 390, 768 or 1440 (`scrollWidth === innerWidth` at every width), and zero console errors through the whole pass.
+
+## 2026-09-24 seventh pass: the length slider, and a Cloudflare Pages mirror
+
+- **`maxWords`, the length slider.** Options replaces the Auto/Short segmented control with a **Title length** slider: the leftmost stop is *Any length* (no cap at all) and stops 1–6 cap every name. The value is a new optional request field `maxWords` (whole number 1–6, `null`/absent = no cap), validated authoritatively in `server/validation.ts`, persisted with the other preferences (read-forward: a device that never set one loads as *Any length*), and carried on every naming operation. Alias rolls are exempt: their shape is the persona.
+- **The cap is enforced, not requested.** The prompt states it as a hard cap that beats every other preference, the task line repeats it ("shorten the idea, never the limit"), and `server/selection.ts` filters over-cap candidates out with the shared `countWords` rule. Because filtering costs candidates, a capped request asks the provider for **12 names / 16 track titles** instead of 8/12 (`WORD_CAP_HEADROOM`) so the displayed batch still fills. The candidate counts themselves moved out of the hardcoded prompt text into a payload `count` field, which removed a duplicated source of truth.
+- **Live proof of the cap** on the deployed Worker, quarry brief, from the pages origin: cap 1 → *Quarry · Floodline · Limeworks · Sump · Sluice · Overburden* (6/6 one word); cap 2 → *Last Shift · Lime Dust · Flooded Quarry · Sump Pump · Quarry Light · Pit Head* (6/6 two words); cap 3 → *Quarry Flood Line · Last Shift Bell · Lime Dust Settles · Pump House Silent · Siren at Four · Town Under Water* (6/6 three words); cap 4 → 6/6 within four, one of them shorter. No partial batches. Two earlier live runs are what produced the fix: a two-word cap returned three-word names until the cap was restated on the task line, and a three-word cap returned **one** name before the prompt was told that short images are the point of a capped request.
+- **Cloudflare Pages mirror: https://namegen-ziom.pages.dev.** Project `namegen-ziom` created with production branch `main`; built with the root base (`npm run build`) so it serves the same static bundle as the Worker origin and calls the same naming API. `wrangler.jsonc` gained the exact origin `https://namegen-ziom.pages.dev` in `CORS_ORIGINS` — the allow-list stays exact-origin by design, so hash preview deployments of this project are **not** allowed to call the API, and neither is any other new host until it is added deliberately. Preflight from the new origin returns 204 with the matching `access-control-allow-origin`.
+- **Validation for this pass**: `npm test` **222 tests in 12 files** (216 before the slider), `npm run typecheck` clean, `npm run build` and `npm run build:worker` succeed. New coverage: the gate module (11 tests), the gate and cap inside selection, the service payload (`count` 8/12 uncapped and 12/16 capped, `maxWords` present for naming and absent for alias, the task line's hard limit), validation of `1–6` and rejection of `0`, `7`, `2.5` and `'3'`, the store's clamp/persist/flow into the request, the prefs round-trip including the read-forward `null`, and `countWords` on punctuation, hyphens, abbreviations and non-Latin text.
+- **Browser pass** on the dev server with the API stubbed (no paid calls): the slider is a real `range` input (`min 0`, `max 6`, step 1) with `aria-labelledby`/`aria-valuetext`, the readout and hint follow it, the prefs record and the next request body both carry the value, moving back to the leftmost stop stores `null` and sends no cap, and at 320px the control still fits (132px wide, no overflow). Zero console errors.
+
+**Worker versions deployed today**: `47884727` (prompt + gate + new CORS origin), `cfd88aed` (slider support), `cc1b533b` (cap on the task line), `d3518f42` (dynamic counts + cap filter), `b0abfed8` (cap restated as beating every other preference). The Pages mirror was published by `wrangler pages deploy` after each UI change; GitHub Pages redeploys the same source through `.github/workflows/pages.yml` on push.
+
 ## Redesign scope
 
 - Dark music-editorial presentation: warm ivory type, orange accents, locally hosted Manrope variable font, a spacious desktop layout, and responsive mobile layouts.

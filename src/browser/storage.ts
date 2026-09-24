@@ -12,7 +12,7 @@
  * names, so the album migration is additive and loses no stored data.
  */
 import type { LengthPref, Mode } from '../../shared/contracts';
-import { AVOID_MAX, NAME_MAX, TRACKS_MAX } from '../../shared/limits';
+import { AVOID_MAX, MAX_WORDS_LIMIT, NAME_MAX, TRACKS_MAX } from '../../shared/limits';
 import { countCodePoints, hasControlCharacter } from '../../shared/text';
 import type { SavedEntry } from '../state/types';
 
@@ -24,6 +24,8 @@ export interface StoredPrefs {
   version: 1;
   language: string;
   length: LengthPref;
+  /** The length slider. Absent on prefs written before the slider existed. */
+  maxWords: number | null;
 }
 
 export interface StoredNamesBatch {
@@ -34,6 +36,8 @@ export interface StoredNamesBatch {
   mode: Mode;
   language: string;
   length: LengthPref;
+  /** The cap in force when the batch was produced; absent on older records. */
+  maxWords?: number | null;
   displayedAt: number;
 }
 
@@ -45,6 +49,8 @@ export interface StoredAlbumBatch {
   mode: 'release';
   language: string;
   length: LengthPref;
+  /** The cap in force when the batch was produced; absent on older records. */
+  maxWords?: number | null;
   displayedAt: number;
 }
 
@@ -101,6 +107,12 @@ function validLength(v: unknown): v is LengthPref {
   return v === 'auto' || v === 'short';
 }
 
+/** The length slider value: null is `Any length`, otherwise 1–6 whole words. */
+function validMaxWords(v: unknown): boolean {
+  if (v === null) return true;
+  return typeof v === 'number' && Number.isInteger(v) && v >= MAX_WORDS_LIMIT.min && v <= MAX_WORDS_LIMIT.max;
+}
+
 function validName(v: unknown): v is string {
   if (typeof v !== 'string') return false;
   if (countCodePoints(v) === 0 || countCodePoints(v) > NAME_MAX) return false;
@@ -140,8 +152,10 @@ export function loadPrefs(): StoredPrefs | null {
       return null;
     }
     // Any other field on the record (an older `aliasStyle`) is ignored, not a
-    // reason to discard the preferences.
-    return { version: 1, language, length };
+    // reason to discard the preferences. A missing or unusable slider value
+    // simply means "Any length" for a device that has not set one.
+    const { maxWords } = parsed as Record<string, unknown>;
+    return { version: 1, language, length, maxWords: validMaxWords(maxWords) ? maxWords as number | null : null };
   } catch {
     return null;
   }
@@ -192,6 +206,7 @@ function validStoredBatch(v: unknown): v is StoredBatch {
   if (typeof partial !== 'boolean' || !validMode(mode)) return false;
   if (typeof language !== 'string' || language === '' || language.length > 40) return false;
   if (!validLength(length) || typeof displayedAt !== 'number') return false;
+  if (record.maxWords !== undefined && !validMaxWords(record.maxWords)) return false;
   if (kind === 'album') {
     return mode === 'release' && validName(record.title) && validTracks(record.tracks);
   }
