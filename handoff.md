@@ -195,10 +195,11 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 
 ### 2026-09-24 fifth pass: screen pass for the album, replacement and cards
 
-- `npm test` **192 tests in 11 files** pass and `npm run typecheck` is clean on the tree this pass was run against. No source changed, so no rebuild was needed and no deployment was re-run: the deployed Pages and Worker builds are unchanged by this pass.
+- `npm test` **192 tests in 11 files** pass and `npm run typecheck` is clean on the tree this pass was run against. No source changed in this pass, so nothing had to be rebuilt for correctness; the push of this documentation did trigger the Pages workflow, which republished the same assets (see below).
 - Both run scripts and their raw output are throwaway (they live outside the repository); the measurements they produced are quoted in the fifth-pass section above. API responses were stubbed in the page, so the pass cost nothing and the Worker's limiter was never exercised.
 - Screens captured: `390-release-album`, `390-release-replaced`, `390-artist-cards`, `390-artist-with-brief`, `390-artist-alias-names`, `768-artist-cards`, `1440-artist-cards`, `1440-release-album`, `320-release-album`.
 - What this pass does **not** cover: the real provider (spend), the deployed origins, physical Android/iOS, and the shortlist/Explore journeys, which the existing 192 tests cover in jsdom.
+- Publication unchanged by this documentation commit: `npm run build:pages` from the pushed tree produced `dist/assets/index-aEgMhcqP.js` (237.64 kB / 73.32 kB gzip) and `dist/assets/index-DJs2vxrR.css`, the exact asset names the GitHub Pages deployment serves after run `36045659175` (success), so the deployed build is the build of the current source. `https://megabomb420.github.io/namegen/` and `https://namegen.whip-blanket.workers.dev/` both answered 200. The Worker was not redeployed: no server source changed.
 
 ### Retained historical evidence: 2026-09-06
 
