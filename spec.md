@@ -248,10 +248,17 @@ Deploy one **Cloudflare Worker with Static Assets**:
 - Wrangler configuration committed without secrets.
 - No separate Pages project, database, KV store, or queue. The single exception is the rate-limit Durable Object recorded in the authorized deviation below.
 
-**Authorized deviations (2026-09-06 and 2026-09-17, product owner):** the same frontend is also
-published on two static hosts — GitHub Pages at `https://megabomb420.github.io/namegen/` and a
-Sites build at `https://namegen-studio.myby.chatgpt.site` — while the naming API stays only on the
-Worker; the Worker grants a narrow CORS allow-list for exactly those origins (see §11 note). A
+**Authorized deviations (2026-09-06, 2026-09-17 and 2026-09-24, product owner):** the same
+frontend is also published on three static hosts — GitHub Pages at
+`https://megabomb420.github.io/namegen/`, a Sites build at
+`https://namegen-studio.myby.chatgpt.site`, and Cloudflare Pages at
+`https://namegen-ziom.pages.dev` — while the naming API stays only on the Worker; the Worker
+grants a narrow CORS allow-list for those origins. The Cloudflare Pages entry also carries the one
+pattern form the Worker accepts, `https://*.namegen-ziom.pages.dev`, so the project's own hash
+preview deployments can call the API; the pattern matches https subdomains of that exact suffix
+only, and a port, a different scheme, a bare `*` or a star anywhere else matches nothing. A
+pattern is only as safe as control of the suffix, which is why it is used for the owner's own
+Pages project and nowhere else (see §11 note). A
 single **Durable Object** (`NamingRateLimiter`) enforces the hard per-IP request cap in
 application code, because the Cloudflare rate-limit binding is not enforced on the account's free
 plan. This is the only DO; it holds no application data. The runtime prompt (§13) includes one

@@ -397,6 +397,53 @@ describe('cross-origin (GitHub Pages mirror)', () => {
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
   });
 
+  it('grants CORS to a preview subdomain of a configured pattern', async () => {
+    const { workerEnv } = makeEnv({ corsOrigins: 'https://namegen-ziom.pages.dev,https://*.namegen-ziom.pages.dev' });
+    for (const preview of [
+      'https://c000c9f3.namegen-ziom.pages.dev',
+      'https://feature-branch.namegen-ziom.pages.dev',
+      'https://a.b.namegen-ziom.pages.dev',
+    ]) {
+      const response = await handleRequest(apiRequest(validBody, { origin: preview }), workerEnv);
+      expect(response.headers.get('access-control-allow-origin'), preview).toBe(preview);
+    }
+    // The production host itself still matches exactly, and preflight echoes it.
+    const preflight = await handleRequest(
+      new Request('https://namegen.example/api/generate', {
+        method: 'OPTIONS',
+        headers: { origin: 'https://c000c9f3.namegen-ziom.pages.dev', 'access-control-request-method': 'POST' },
+      }),
+      workerEnv,
+    );
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get('access-control-allow-origin')).toBe('https://c000c9f3.namegen-ziom.pages.dev');
+  });
+
+  it('never lets a pattern reach past its own suffix', async () => {
+    const { workerEnv } = makeEnv({ corsOrigins: 'https://*.namegen-ziom.pages.dev' });
+    for (const hostile of [
+      'https://abc.namegen-ziom.pages.dev.attacker.example',
+      'https://namegen-ziom.pages.dev.attacker.example',
+      'http://abc.namegen-ziom.pages.dev',
+      'https://abc.namegen-ziom.pages.dev:8443',
+      'https://abcnamegen-ziom.pages.dev',
+      'https://namegen-ziom.pages.dev',
+    ]) {
+      const response = await handleRequest(apiRequest(validBody, { origin: hostile }), workerEnv);
+      expect(response.headers.get('access-control-allow-origin'), hostile).toBeNull();
+    }
+  });
+
+  it('treats a bare or misplaced star as an origin that matches nothing', async () => {
+    for (const entry of ['*', 'https://*', 'https://namegen-ziom.pages.dev*', 'https://a.*.pages.dev', 'https://*.dev']) {
+      const { workerEnv } = makeEnv({ corsOrigins: entry });
+      for (const origin of ['https://namegen-ziom.pages.dev', 'https://anything.pages.dev', 'https://evil.example']) {
+        const response = await handleRequest(apiRequest(validBody, { origin }), workerEnv);
+        expect(response.headers.get('access-control-allow-origin'), `${entry} vs ${origin}`).toBeNull();
+      }
+    }
+  });
+
   it('sends no CORS headers without an Origin header, and OPTIONS stays 405', async () => {
     const { workerEnv } = makeEnv({ corsOrigins: PAGES_ORIGIN });
     const response = await handleRequest(apiRequest(validBody), workerEnv);

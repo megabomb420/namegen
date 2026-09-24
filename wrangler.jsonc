@@ -37,7 +37,7 @@
   ],
   "observability": { "enabled": true },
   "vars": {
-    "CORS_ORIGINS": "https://megabomb420.github.io,https://namegen-ziom.pages.dev,https://namegen-studio.myby.chatgpt.site",
+    "CORS_ORIGINS": "https://megabomb420.github.io,https://namegen-ziom.pages.dev,https://*.namegen-ziom.pages.dev,https://namegen-studio.myby.chatgpt.site",
     "NAMING_LIMIT_PER_MINUTE": "3"
   }
 }

@@ -309,12 +309,40 @@ async function route(request: Request, env: WorkerEnv, log: LogFn): Promise<Resp
   return await handleGenerate(request, env, log);
 }
 
-// ----- Cross-origin support for the GitHub Pages mirror --------------------
+// ----- Cross-origin support for the mirrors --------------------------------
 // Narrow by design: only origins listed in CORS_ORIGINS (plus the Worker's own
-// origin) receive CORS headers. No wildcard is ever used.
+// origin) receive CORS headers. One pattern form exists, and only one:
+// `https://*.host` matches subdomains of that host, which is what Cloudflare
+// Pages preview deployments need (their host carries a per-build hash). A bare
+// `*`, a star anywhere else, or a plain host with no pattern still matches
+// exactly, so a typo cannot quietly open the API to the world.
 
 function normalizeOrigin(origin: string): string {
   return origin.trim().replace(/\/+$/, '');
+}
+
+/**
+ * Does one configured entry allow this origin? Exact string equality, or the
+ * `https://*.suffix` form, where the origin must be an https origin whose host
+ * is a strict subdomain of `suffix` — so `https://abc.namegen-ziom.pages.dev`
+ * matches `https://*.namegen-ziom.pages.dev`, while
+ * `https://abc.namegen-ziom.pages.dev.attacker.example` (a different
+ * registrable domain), `http://abc.namegen-ziom.pages.dev` (wrong scheme) and
+ * `https://abc.namegen-ziom.pages.dev:8443` (a port) do not. The pattern is
+ * only as safe as control of the suffix: anyone who can publish under that
+ * apex can call the API, which is exactly the intent for the owner's own Pages
+ * project and nothing else.
+ */
+function entryAllowsOrigin(entry: string, origin: string): boolean {
+  if (!entry.includes('*')) return entry === origin;
+  if (!entry.startsWith('https://*.') || entry.slice('https://*.'.length).includes('*')) return false;
+  const suffix = entry.slice('https://*.'.length);
+  if (suffix === '' || !suffix.includes('.')) return false;
+  if (!origin.startsWith('https://')) return false;
+  const host = origin.slice('https://'.length);
+  // A host with a port, path or userinfo never matches: preview hosts have none.
+  if (host.length <= suffix.length + 1 || !host.endsWith(`.${suffix}`)) return false;
+  return !host.slice(0, host.length - suffix.length - 1).includes(':');
 }
 
 function corsOriginFor(request: Request, env: WorkerEnv): string | null {
@@ -326,7 +354,7 @@ function corsOriginFor(request: Request, env: WorkerEnv): string | null {
     .split(',')
     .map(normalizeOrigin)
     .filter((o) => o !== '');
-  return configured.includes(origin) ? origin : null;
+  return configured.some((entry) => entryAllowsOrigin(entry, origin)) ? origin : null;
 }
 
 function applyCors(request: Request, env: WorkerEnv, response: Response): Response {
