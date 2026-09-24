@@ -249,8 +249,9 @@ Deploy one **Cloudflare Worker with Static Assets**:
 - No separate Pages project, database, KV store, or queue. The single exception is the rate-limit Durable Object recorded in the authorized deviation below.
 
 **Authorized deviations (2026-09-06, 2026-09-17 and 2026-09-24, product owner):** the same
-frontend is also published on static hosts — GitHub Pages at
-`https://megabomb420.github.io/namegen/`, a Sites build at
+frontend is also published on static hosts, and **GitHub Pages at
+`https://megabomb420.github.io/namegen/` is the canonical address** — it is rebuilt and gated by
+`npm run typecheck` and `npm test` on every push to `main` — with a Sites build at
 `https://namegen-studio.myby.chatgpt.site`, and Cloudflare Pages at
 `https://namegen-studio.pages.dev` (project `namegen-studio`; the earlier
 `namegen-ziom` project is still served and still allowed while the owner decides whether to keep

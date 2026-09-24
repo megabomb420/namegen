@@ -1,4 +1,4 @@
-name: Deploy PWA mirror to GitHub Pages
+name: Deploy site to GitHub Pages
 
 on:
   push:
@@ -24,6 +24,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # GitHub Pages is the canonical address, so it is gated by the suite: a
+      # failing test or type error must not reach the public site.
+      - run: npm run typecheck
+      - run: npm test
       - run: npm run build:pages
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
