@@ -1,6 +1,6 @@
 # Implementation handoff — [HANDOFF]
 
-Updated: 2026-09-17 (third pass). The frontend redesign is complete and published to Sites, GitHub Pages, and the existing Cloudflare Worker. Earlier passes the same day moved the provider model id to `deepseek-flash` and synced `spec.md` with the retired-PWA reality. The latest pass changed what Release and Artist produce and added per-track replacement, so the response contract and the client state shape were reworked — see the third-pass section below. This document supersedes the earlier PWA deployment instructions.
+Updated: 2026-09-24 (fifth pass). The frontend redesign is complete and published to Sites, GitHub Pages, and the existing Cloudflare Worker. Earlier passes moved the provider model id to `deepseek-flash`, synced `spec.md` with the retired-PWA reality, and changed what Release and Artist produce (one album per release, always-alias Artist, per-track replacement), so the response contract and the client state shape were reworked — see the third-pass and fourth-pass sections below. The fifth pass is a screen pass with no source change: it closes the layout gaps the third and fourth passes left open. This document supersedes the earlier PWA deployment instructions.
 
 ## Current state and live locations
 
@@ -40,7 +40,21 @@ Product decisions taken by the owner, then implemented:
 - A third stable, server-side persona prompt (`ALIAS_SYSTEM_BRIEF`) joins the other two: no house style of its own, the names have to fit the brief, everything else (JSON shape, eight candidates, no real artists, 60-character limit, language) is unchanged. Validation rejects `aliasStyle: "brief"` without a brief, and the client never sends it: the card and the main button are disabled with a short explanation.
 - The persona *selection* state is gone (`AppState.aliasStyle`, `setAliasStyle`, `StoredPrefs.aliasStyle`) because each card names its own style. Stored prefs that still contain the old field keep loading; written prefs no longer carry it.
 - Verified: 192 tests in 11 files pass (183 before), `tsc` clean, `build:worker` succeeds. Live after deploying Worker `74dd1644-8133-4e19-8dde-737a5b080c55`: the three card labels are present in the served bundle and the old persona-selector copy is gone; `aliasStyle: "brief"` without a brief returns 400 `INVALID_INPUT` (the request never reaches the limiter or the provider); with a brief it returned six names that visibly come from it — `Silted Chorus · Quarry Lament · Drowned Arcade · Basin Static · Chalkwater Ghost · Submerged Estate` for a brief about a flooded quarry town.
-- Not verified: the card grid on a real screen (no browser pass here); the row still relies on an `auto-fit` grid with a 220px minimum.
+- Not verified here: the card grid on a real screen — the fourth pass had no browser pass, and the row still relies on an `auto-fit` grid with a 220px minimum. **Closed 2026-09-24 by the fifth-pass screen pass below** at 390×844 (one 350px column), 768×1024 (three 229px columns) and 1440×1000 (three 271px columns), with no horizontal overflow at any of them.
+
+## 2026-09-24 fifth pass: the screen pass the album and cards were missing
+
+No source changed in this pass. The third pass recorded "no browser or visual pass was done for the new album, track-list and persona UI — treat the layout as unverified until it has been seen on a screen", and the fourth pass repeated it for the card grid. Both are now seen and measured, and the layout holds.
+
+Method: `npm run dev:web` at `http://localhost:5173` in a headless Chromium, driven through the real UI (mode buttons, brief field, Generate, the replace action on a track row, the alias cards). Every `POST /api/generate` was answered in-page by request interception, so **no request reached the Worker and no provider call was paid for**; the stub answered with one album (`Stub Album Title` + 10 tracks) for `generate/release`, three candidates for `replaceTrack`, and six names for every other operation. Measured at 390×844, 768×1024, 1440×1000 and 320×740, from an empty device (`localStorage` and `sessionStorage` cleared before the run).
+
+- **One release reads as one album.** The result renders the `ALBUM TITLE` kicker, the title (27px at 390, 40px at 1440) and ten numbered track rows, each with its own `Replace “…” with a new one` action; the panel label reads `Release / 01 album · 10 tracks`. No horizontal overflow at any of the four widths (`scrollWidth === innerWidth`), and no button, row or title was clipped at 320.
+- **Replacing a track touches one row.** Clicking the second row's replace action swapped `Track Bravo` → the first stubbed candidate and left the title and the other nine rows byte-identical, which is what the album workspace promised. The request that left the page was `operation: "replaceTrack"`, `mode: "release"`, carrying `albumTitle`, the nine remaining tracks in `tracks` and all eleven titles in `avoid` — no reconstruction, no automatic retry.
+- **The three alter-ego cards lay out.** One 350px column at 390×844, three 229px columns at 768×1024, three 271px columns at 1440×1000, in the declared order *From your brief*, *Keeper of the Iron Tongue*, *Nobody's Darling*, each card carrying its own label, blurb and action. The Artist brief is its own field, so a brief typed in Track or Release leaves the brief card shut — correct, and visible as `Type something in the brief first`.
+- **The cards roll what they say they roll.** With the artist brief empty, *From your brief* and the main `Roll from your brief` button are both disabled; typing an artist brief enables both and replaces the note with `Follow the feeling. You can refine the names next.` Clicking *Have the Keeper name you* sent `aliasStyle: "wu"`; clicking *Roll from my brief* sent `aliasStyle: "brief"` with the brief and the previous batch in `avoid`. Six names rendered each time, the batch navigator read `Older 2 / 2 Newer`, and the panel label read `Artist / 06 ideas`.
+- **Clean console.** Zero page errors and no console output beyond Vite's connect lines and React's DevTools notice; no request left the dev origin.
+
+This is viewport evidence from a headless desktop Chromium, not physical-device evidence: the paid creative-fixture pass, real Android/iOS behaviour, and the delivered-notification path remain open as listed below.
 
 ## Redesign scope
 
@@ -164,20 +178,27 @@ The Sites plugin's local helper files disappeared during the session. The fallba
 
 - `npm run typecheck` clean and `npm test` 131 tests in 11 files passed after the model-id change (the outbound model string is asserted in `server/service.test.ts`).
 - Model id verified live on 2026-09-17 after deploying: one `POST /api/generate` to production returned HTTP 200 with six names in 1.24 s (`Last Bus, Cold Hands | Screen Crack Shuffle | Two Fare Stops | Hands Like Ice | Bus Shelter Bass | Cracked Glass Glow`), so `deepseek-flash` is accepted by the real provider. This is a single smoke call, not a creative-quality pass: the paid 12-fixture rerun is still outstanding.
-- Deployed Worker version `cdcec77d-1bde-446b-80b3-6e2fdaac476d`; GitHub Pages workflow run 35280310430 succeeded for the same commit. No `.dev.vars` and no DeepSeek key exist on this machine, so no local provider call was possible.
+- Deployed Worker version `cdcec77d-1bde-446b-80b3-6e2fdaac476d`; GitHub Pages workflow run 35280310430 succeeded for the same commit. No `.dev.vars` and no DeepSeek key existed in the repository checkout used for that pass, so no local provider call was possible. *Corrected 2026-09-24: an ignored `.dev.vars` does exist in an older local checkout of this repository kept outside it (under the owner's OneDrive Documents), so a local `wrangler dev` with a real key is possible from there; its contents were not read, and the key-rotation item below is still open.*
 - The model id lives only in `server/config.ts` on the Worker. The Pages and Sites copies are static frontends that call the same Worker and carry no provider settings, so they need no rebuild for this change.
 
 ### 2026-09-17 third pass: album, always-alias Artist, per-track replacement
 
 - `npm run typecheck` clean, `npm test` **183 tests in 11 files** pass (131 before this change), `npm run build:worker` succeeds.
 - The release journey is covered end to end in jsdom: the album renders as a title plus numbered tracks, replacing one track swaps only that row, the album saves as a single shortlist entry, a reload restores it, and copying emits the title with numbered tracks.
-- No browser or visual pass was done for the new album, track-list and persona UI — only that jsdom journey and the stylesheet by construction. Treat the layout as unverified until it has been seen on a screen.
+- No browser or visual pass was done for the new album, track-list and persona UI — only that jsdom journey and the stylesheet by construction. Treat the layout as unverified until it has been seen on a screen. **Closed 2026-09-24 — see the fifth-pass screen pass below.**
 - Verified live on 2026-09-17 after deploying (final Worker version `dab9edbb-2b6d-42c3-a1c4-72a24792b69f`):
   - a release request returned `{"album":{"title":"The Pit Takes Its Time","tracks":[10 tracks]},"partial":false}` in 1.7 s, and a second one returned `Tide Shed Sessions` with ten tracks in 1.4 s (81 completion tokens for 12 tracks, so the 800-token ceiling is nowhere near);
   - a track replacement returned `{"names":["Salt Line at the High Water Mark"]}` in 1.1 s (31 completion tokens, `received: 3`);
   - an Artist roll returned six two-word names in 7.4 s (thinking enabled), e.g. `Sullen Dubplate · Rainy Metronome · Bruised Bassline · Hollow Antenna · Ashen Two-Step · Concrete Lullaby`.
 - **Bug found by that live check, and fixed:** the first replacement call failed with a 502 `UNUSABLE_OUTPUT`. The Worker log showed `selection-shape` with `received: 0` — the model had answered a replacement request with the *album* shape, because the payload carried `mode: "release"` plus an album title and track list while the prompt described the shapes only by request kind. Every request now carries an explicit `responseShape` field (`names` | `album`) that the prompt treats as authoritative, and a shape rejection records how many entries arrived, so such a failure is answerable from the log. Both changes are covered by tests and by the live re-run above; `spec.md` §6 and §13 record them.
 - Still unverified: the paid creative-fixture pass (now 14 fixtures, including an album and a replacement) and any human quality read of album output.
+
+### 2026-09-24 fifth pass: screen pass for the album, replacement and cards
+
+- `npm test` **192 tests in 11 files** pass and `npm run typecheck` is clean on the tree this pass was run against. No source changed, so no rebuild was needed and no deployment was re-run: the deployed Pages and Worker builds are unchanged by this pass.
+- Both run scripts and their raw output are throwaway (they live outside the repository); the measurements they produced are quoted in the fifth-pass section above. API responses were stubbed in the page, so the pass cost nothing and the Worker's limiter was never exercised.
+- Screens captured: `390-release-album`, `390-release-replaced`, `390-artist-cards`, `390-artist-with-brief`, `390-artist-alias-names`, `768-artist-cards`, `1440-artist-cards`, `1440-release-album`, `320-release-album`.
+- What this pass does **not** cover: the real provider (spend), the deployed origins, physical Android/iOS, and the shortlist/Explore journeys, which the existing 192 tests cover in jsdom.
 
 ### Retained historical evidence: 2026-09-06
 
